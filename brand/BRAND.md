@@ -49,11 +49,21 @@ needed to display the logo.
 
 ## README header that follows light and dark mode on GitHub
 
+Centered, 240 px wide, with the tagline below and a line of space above and below:
+
 ```html
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/logo/brasskey-wordmark-on-dark.svg">
-  <img alt="Brasskey" src="brand/logo/brasskey-wordmark-on-light.svg" width="320">
-</picture>
+<br>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/brasskey-wordmark-on-dark.svg">
+    <img alt="Brasskey" src="brand/logo/brasskey-wordmark-on-light.svg" width="240">
+  </picture>
+</p>
+
+<p align="center"><b>The key to every engine.</b></p>
+
+<br>
 ```
 
 ## Trademark

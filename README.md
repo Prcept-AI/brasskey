@@ -1,9 +1,15 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/logo/brasskey-wordmark-on-dark.svg">
-  <img alt="Brasskey" src="brand/logo/brasskey-wordmark-on-light.svg" width="320">
-</picture>
+<br>
 
-**The key to every engine.**
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/brasskey-wordmark-on-dark.svg">
+    <img alt="Brasskey" src="brand/logo/brasskey-wordmark-on-light.svg" width="240">
+  </picture>
+</p>
+
+<p align="center"><b>The key to every engine.</b></p>
+
+<br>
 
 Brasskey is an open-source tool to deploy, tune, verify and serve open models on any hardware,
 measured on your own traffic.
