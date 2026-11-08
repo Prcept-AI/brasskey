@@ -189,3 +189,20 @@ def test_no_secret_files_are_tracked():
         or Path(name).name.startswith(".env.")
     ]  # fmt: skip
     assert not risky, f"Files that usually hold secrets are tracked: {risky}"
+
+
+# --- container images are pinned by digest -------------------------------------------------------
+
+
+def test_container_images_are_pinned_by_digest():
+    """Every image Brasskey builds from or with names an exact digest, like every CI tool."""
+    unpinned = []
+    dockerfile = (ROOT / "docker" / "Dockerfile").read_text()
+    for image in re.findall(r"^FROM (\S+)", dockerfile, re.MULTILINE):
+        if not re.search(r"@sha256:[0-9a-f]{64}$", image):
+            unpinned.append(f"docker/Dockerfile: FROM {image}")
+    for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
+        for name, value in re.findall(r'^\s+(\w+_IMAGE): "([^"]+)"', workflow.read_text(), re.M):
+            if not re.search(r"@sha256:[0-9a-f]{64}$", value):
+                unpinned.append(f"{workflow.name} {name}={value}")
+    assert not unpinned, f"Pin these by digest: {unpinned}"

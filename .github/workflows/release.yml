@@ -12,8 +12,10 @@
 #   signs PEP 740 attestations with Sigstore.
 # - The GitHub release carries the wheel, sdist, SHA256SUMS and an SPDX SBOM (Syft, pinned), and
 #   GitHub build provenance (Sigstore-signed) is recorded for the wheel and sdist.
-# - Supply chain (CONTRIBUTING.md): actions pinned by commit SHA, no caches (no cache poisoning),
-#   least-privilege token per job, no credentials persisted by checkout.
+# - The container image ghcr.io/prcept-ai/brasskey:<version> (linux/amd64 and linux/arm64) is
+#   built from the same wheel and the hash-locked requirements, with BuildKit provenance.
+# - Supply chain (CONTRIBUTING.md): actions pinned by commit SHA, images by digest, no caches (no
+#   cache poisoning), least-privilege token per job, no credentials persisted by checkout.
 
 name: Release
 
@@ -32,6 +34,9 @@ env:
   UV_VERSION: "0.13.6"
   SYFT_VERSION: "v1.55.0"
   NO_COLOR: "1"
+  # Multi-arch image builds: pinned by digest like every other tool (ADR 0014).
+  BUILDKIT_IMAGE: "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c"
+  BINFMT_IMAGE: "tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
 
 jobs:
   build:
@@ -200,3 +205,48 @@ jobs:
           case "$VERSION" in *a*|*b*|*rc*|*dev*) prerelease=(--prerelease) ;; esac
           gh release create "$TAG" dist/* release/* --repo "$REPO" --verify-tag \
             --title "Brasskey $VERSION" --generate-notes "${prerelease[@]}"
+
+  container:
+    name: Container image (ghcr.io)
+    needs: [build, publish-pypi]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io/prcept-ai/brasskey
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Build context (only the wheel and the hash-locked requirements)
+        run: |
+          mkdir -p "$RUNNER_TEMP/context"
+          cp dist/*.whl "$RUNNER_TEMP/context/"
+          uv export --locked --no-dev --no-emit-project --format requirements.txt \
+            --output-file "$RUNNER_TEMP/context/requirements.txt"
+      - name: Build and push linux/amd64 and linux/arm64
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          image="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          tags=(--tag "$image:$VERSION")
+          case "$VERSION" in *a*|*b*|*rc*|*dev*) ;; *) tags+=(--tag "$image:latest") ;; esac
+          echo "$TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+          docker run --privileged --rm "$BINFMT_IMAGE" --install arm64
+          docker buildx create --name brasskey --driver docker-container \
+            --driver-opt "image=$BUILDKIT_IMAGE" --use
+          docker buildx build --platform linux/amd64,linux/arm64 --file docker/Dockerfile \
+            "${tags[@]}" --provenance=mode=max --push "$RUNNER_TEMP/context"
+          docker logout ghcr.io

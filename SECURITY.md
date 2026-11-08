@@ -99,3 +99,11 @@ sha256sum dist/*
 
 PyPI also shows the Sigstore-signed attestations (PEP 740) for each file on the release's
 "Download files" page.
+
+The container image `ghcr.io/prcept-ai/brasskey:<version>` is built from the same wheel, with
+dependencies installed only from the hash-locked requirements, base images pinned by digest, and
+an unprivileged user. Its build provenance travels with it:
+
+```bash
+docker buildx imagetools inspect ghcr.io/prcept-ai/brasskey:<version> --format '{{json .Provenance}}'
+```

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Continuous integration: lint, types, license policy, tests (macOS arm64 + Linux, Python
-# 3.11-3.14), a packaging check (reproducible build, metadata, clean install) and a supply-chain
-# audit.
+# 3.11-3.14), a packaging check (reproducible build, metadata, clean install), a container image
+# smoke test and a supply-chain audit.
 #
 # Supply-chain rules (CONTRIBUTING.md):
 # - every action is pinned by full commit SHA (tag in the trailing comment; Dependabot bumps both);
@@ -110,6 +110,34 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/clean/bin/python" dist/*.whl
           "$RUNNER_TEMP/clean/bin/brasskey" --version
           "$RUNNER_TEMP/clean/bin/brasskey" doctor --json > /dev/null
+
+  container:
+    name: Container image (build and smoke test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Build context (the wheel and the hash-locked requirements only)
+        run: |
+          uv build --wheel --build-constraints scripts/build-constraints.txt --require-hashes \
+            --no-create-gitignore --out-dir "$RUNNER_TEMP/context"
+          uv export --locked --no-dev --no-emit-project --format requirements.txt \
+            --output-file "$RUNNER_TEMP/context/requirements.txt"
+      - name: Build the image (linux/amd64)
+        run: docker build --file docker/Dockerfile --tag brasskey:ci "$RUNNER_TEMP/context"
+      - name: Run it (version, doctor, unprivileged user, dependencies consistent)
+        run: |
+          docker run --rm brasskey:ci --version
+          docker run --rm brasskey:ci doctor --json > /dev/null
+          test "$(docker run --rm --entrypoint id brasskey:ci -u)" != "0"
+          docker run --rm --entrypoint python brasskey:ci -m pip check
 
   audit:
     name: Supply-chain audit
