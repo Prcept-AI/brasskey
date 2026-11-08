@@ -15,7 +15,7 @@ in, so it is easy to test and reuse from a future API.
 """
 
 import logging
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,6 +43,8 @@ QUICK_START_MAX_DOWNLOAD_BYTES = 5 * 10**9  # about 5 GB (ADR 0002)
 SAFETENSORS_QUALITY_ORDER = ("bf16", "fp16", "fp8", "awq-int4")
 
 CachedBytes = Callable[[ModelArtifact], int]
+# GPU backends that installed engines reported themselves (engines/registry.reported_gpu_backends).
+GpuBackends = Mapping[EngineId, frozenset[str]]
 
 
 class NoFitError(BrasskeyError):
@@ -117,8 +119,10 @@ def _fit_for_engine(
     *,
     download_limit: int | None = None,
     cached_bytes: CachedBytes = lambda _artifact: 0,
+    backends: GpuBackends | None = None,
 ) -> _EngineResult:
     tried: list[FitEstimate] = []
+    gpu_backends = (backends or {}).get(engine)  # None: unknown, assume the machine's GPU
     blocked: list[str] = []
     for artifact in _ordered_artifacts(engine, model.artifacts_for(engine)):
         quant = check_quantization(engine, artifact.quantization, hw)
@@ -135,6 +139,7 @@ def _fit_for_engine(
             hw,
             context_length=request.context_length,
             concurrency=request.concurrency,
+            gpu_backends=gpu_backends,
         )
         if quant.notes:
             fit = fit.model_copy(update={"notes": fit.notes + quant.notes})
@@ -241,7 +246,12 @@ def _no_fit(
 
 
 def _largest_fitting_model(
-    catalog: Catalog, engines: Sequence[EngineId], hw: HardwareReport, request: RunRequest
+    catalog: Catalog,
+    engines: Sequence[EngineId],
+    hw: HardwareReport,
+    request: RunRequest,
+    *,
+    backends: GpuBackends | None = None,
 ) -> str | None:
     ladder = sorted(
         (model for model in catalog.models if model.quick_start_rank is not None),
@@ -250,7 +260,7 @@ def _largest_fitting_model(
     )
     for model in ladder:
         for engine in engines:
-            if _fit_for_engine(model, engine, hw, request).best is not None:
+            if _fit_for_engine(model, engine, hw, request, backends=backends).best is not None:
                 return model.id
     return None
 
@@ -261,6 +271,8 @@ def _plan_named_model(
     hw: HardwareReport,
     request: RunRequest,
     catalog: Catalog,
+    *,
+    backends: GpuBackends | None = None,
 ) -> RunPlan:
     tried: list[FitEstimate] = []
     blocked: list[str] = []
@@ -271,7 +283,7 @@ def _plan_named_model(
                 f"{engine.display_name}."
             )
             continue
-        result = _fit_for_engine(model, engine, hw, request)
+        result = _fit_for_engine(model, engine, hw, request, backends=backends)
         tried.extend(result.tried)
         blocked.extend(result.blocked)
         if result.best is not None:
@@ -290,7 +302,7 @@ def _plan_named_model(
             f"{model.display_name} can't run on this machine. " + " ".join(blocked),
             fix="Pick another model or engine for this hardware.",
         )
-    suggestion = _largest_fitting_model(catalog, engines, hw, request)
+    suggestion = _largest_fitting_model(catalog, engines, hw, request, backends=backends)
     raise _no_fit(model, _smallest_need(tried), request, suggestion)
 
 
@@ -301,15 +313,17 @@ def _plan_quick_start(
     request: RunRequest,
     cached_bytes: CachedBytes,
     installed: Collection[EngineId] | None,
+    *,
+    backends: GpuBackends | None = None,
 ) -> RunPlan:
     """Prefer what can run right now: try installed engines first, then every engine."""
     first = [engine for engine in engines if installed is not None and engine in installed]
     if first and len(first) < len(engines):
         try:
-            return _quick_start_with(catalog, first, hw, request, cached_bytes)
+            return _quick_start_with(catalog, first, hw, request, cached_bytes, backends=backends)
         except NoFitError:
             logger.debug("No quick-start fit with installed engines %s; trying all", first)
-    return _quick_start_with(catalog, engines, hw, request, cached_bytes)
+    return _quick_start_with(catalog, engines, hw, request, cached_bytes, backends=backends)
 
 
 def _quick_start_with(
@@ -318,6 +332,8 @@ def _quick_start_with(
     hw: HardwareReport,
     request: RunRequest,
     cached_bytes: CachedBytes,
+    *,
+    backends: GpuBackends | None = None,
 ) -> RunPlan:
     ladder = sorted(
         (model for model in catalog.models if model.quick_start_rank is not None),
@@ -335,12 +351,13 @@ def _quick_start_with(
                 request,
                 download_limit=QUICK_START_MAX_DOWNLOAD_BYTES,
                 cached_bytes=cached_bytes,
+                backends=backends,
             )
             if limited.best is not None:
                 quick.append((model, limited.best))
                 break
         for engine in engines:
-            unlimited = _fit_for_engine(model, engine, hw, request)
+            unlimited = _fit_for_engine(model, engine, hw, request, backends=backends)
             if unlimited.best is not None:
                 any_size.append((model, unlimited.best))
                 break
@@ -362,7 +379,7 @@ def _quick_start_with(
         tried = [
             fit
             for engine in engines
-            for fit in _fit_for_engine(smallest, engine, hw, request).tried
+            for fit in _fit_for_engine(smallest, engine, hw, request, backends=backends).tried
         ]
         raise _no_fit(smallest, _smallest_need(tried), request, suggestion=None)
     model, fit = chosen
@@ -395,25 +412,31 @@ def plan_run(
     cached_bytes: CachedBytes = lambda _artifact: 0,
     runnable: Collection[EngineId] | None = None,
     installed: Collection[EngineId] | None = None,
+    gpu_backends: GpuBackends | None = None,
 ) -> RunPlan:
     """Decide what ``brasskey run`` would start. Raises a plain-language error if nothing fits.
 
     ``runnable``: engines this build can start (None: all). ``installed``: engines detected on
     this machine, tried first (None: installation unknown, keep the default order).
+    ``gpu_backends``: GPU backends installed engines reported themselves; an engine that reported
+    none (a CPU-only llama.cpp) is planned for the CPU. Engines left out use the machine's GPU.
     """
     engines = _engines(request, hw, runnable, installed)
     logger.debug(
-        "Planning model=%s engines=%s context=%d",
+        "Planning model=%s engines=%s context=%d gpu_backends=%s",
         request.model or "<quick start>",
         [engine.value for engine in engines],
         request.context_length,
+        gpu_backends,
     )
     if request.model is None:
-        return _plan_quick_start(catalog, engines, hw, request, cached_bytes, installed)
+        return _plan_quick_start(
+            catalog, engines, hw, request, cached_bytes, installed, backends=gpu_backends
+        )
     if request.model.startswith("hf:"):
         if hub is None:
             raise ModelSourceError("Looking up Hugging Face models needs network access.")
         model = resolve_hf_model(request.model, hub)
     else:
         model = find_model(catalog, request.model)
-    return _plan_named_model(model, engines, hw, request, catalog)
+    return _plan_named_model(model, engines, hw, request, catalog, backends=gpu_backends)

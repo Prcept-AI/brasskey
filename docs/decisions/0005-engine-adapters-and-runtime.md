@@ -66,6 +66,10 @@ churn (frequent releases that change flags and behavior) is the likeliest way fo
 - **Measurement over estimate:**
   - llama.cpp's `--list-devices` reports Metal's working-set limit, which replaces the macOS
     estimate from ADR 0003 (12288 MiB on the M3 Pro, matching the estimate).
+  - The same list shows which GPU backends the build has. A build that lists no GPU (a CPU-only
+    llama.cpp on an NVIDIA machine, say) is planned for system RAM and launched with no GPU
+    layers, and the plan warns how to get a GPU build. When the list is missing (an older
+    version, or the command failed), Brasskey keeps assuming the machine's GPU.
   - Startup time is measured and stored in the lock.
 
 ## Consequences

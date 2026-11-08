@@ -4,7 +4,7 @@
 import pytest
 
 from brasskey.config.intent import Intent
-from brasskey.engines.types import EngineId
+from brasskey.engines.types import DevicePool, EngineId
 from brasskey.models.catalog import load_catalog
 from brasskey.planner import NoFitError, RunRequest, UnsupportedEngineError, plan_run
 from brasskey.planner.replay import hardware_summary, lock_from_plan, plan_from_lock
@@ -27,6 +27,16 @@ def test_replay_on_the_same_machine_gives_the_same_plan():
     assert replayed.fit.required_bytes == plan.fit.required_bytes
     assert replayed.reasons[0].startswith("Replaying brasskey.lock")
     assert len(replayed.reasons) == 1
+
+
+def test_replay_with_a_cpu_only_llama_cpp_is_estimated_for_the_cpu():
+    gpu_machine = machines.l4()
+    plan, lock = locked(hw=gpu_machine)  # planned before a llama.cpp was installed: GPU
+    assert plan.fit.budget.pool == DevicePool.NVIDIA_GPU
+    replayed = plan_from_lock(lock, gpu_machine, gpu_backends={EngineId.LLAMACPP: frozenset()})
+    assert replayed.fit.artifact == plan.fit.artifact  # same files as locked
+    assert replayed.fit.budget.pool == DevicePool.CPU
+    assert any("reports no GPU it can use" in warning for warning in replayed.fit.warnings)
 
 
 def test_replay_on_other_hardware_says_so():

@@ -62,6 +62,11 @@ class EngineInstall(_Frozen):
         default=frozenset(), description="Command-line flags this version supports."
     )
     devices: tuple[EngineDevice, ...] = ()
+    devices_listed: bool = Field(
+        default=False,
+        description="The engine listed its devices itself, so `devices` is complete: no GPU "
+        "device means it can use only the CPU. False: unknown (e.g. an older version).",
+    )
     image_digest: str | None = None
     image: str | None = Field(
         default=None, description="Docker runtime: the pinned image, repository:tag@sha256:..."
@@ -81,6 +86,11 @@ class EngineInstall(_Frozen):
     @property
     def backends(self) -> tuple[str, ...]:
         return tuple(sorted({device.backend for device in self.devices}))
+
+    @property
+    def gpu_backends(self) -> frozenset[str] | None:
+        """GPU backends the engine reported itself (empty: CPU only); None when unknown."""
+        return frozenset(self.backends) if self.devices_listed else None
 
 
 class InstallHint(_Frozen):

@@ -51,6 +51,16 @@ MIN_CC_FOR_QUANTIZATION: dict[EngineId, dict[str, tuple[int, int]]] = {
 }
 BF16_MIN_CC = (8, 0)
 
+# llama.cpp backends (as its --list-devices names them) that can use each kind of GPU.
+LLAMACPP_GPU_BACKENDS: dict[AcceleratorKind, frozenset[str]] = {
+    AcceleratorKind.APPLE_GPU: frozenset({"metal"}),
+    AcceleratorKind.NVIDIA_GPU: frozenset({"cuda", "vulkan"}),
+}
+_LLAMACPP_GPU_POOLS = (  # checked in this order
+    (AcceleratorKind.APPLE_GPU, DevicePool.APPLE_GPU),
+    (AcceleratorKind.NVIDIA_GPU, DevicePool.NVIDIA_GPU),
+)
+
 # Memory profiles (estimates; see docs/decisions/0004-model-fit-and-planning.md).
 _LLAMACPP = EngineMemoryProfile(max_fraction=0.95, overhead_bytes=GIB // 2, overhead_fraction=0.02)
 _LLAMACPP_CPU = EngineMemoryProfile(
@@ -84,16 +94,24 @@ def engine_preference(hw: HardwareReport) -> list[EngineId]:
     return [EngineId.LLAMACPP]
 
 
-def device_pool(engine: EngineId, hw: HardwareReport) -> DevicePool:
-    """Where this engine would place the model on this machine."""
+def device_pool(
+    engine: EngineId, hw: HardwareReport, gpu_backends: frozenset[str] | None = None
+) -> DevicePool:
+    """Where this engine would place the model on this machine.
+
+    ``gpu_backends``: the GPU backends an installed llama.cpp reported itself with
+    ``--list-devices`` (an empty set: a CPU-only build). None means unknown or not installed;
+    llama.cpp is then assumed to use the machine's GPU, as its install hint recommends.
+    """
     if engine == EngineId.MLX:
         return DevicePool.APPLE_GPU
     if engine in (EngineId.VLLM, EngineId.SGLANG):
         return DevicePool.NVIDIA_GPU
-    if hw.accelerators_of(AcceleratorKind.APPLE_GPU):
-        return DevicePool.APPLE_GPU  # llama.cpp with Metal
-    if hw.accelerators_of(AcceleratorKind.NVIDIA_GPU):
-        return DevicePool.NVIDIA_GPU  # llama.cpp with CUDA
+    for kind, pool in _LLAMACPP_GPU_POOLS:
+        if hw.accelerators_of(kind) and (
+            gpu_backends is None or gpu_backends & LLAMACPP_GPU_BACKENDS[kind]
+        ):
+            return pool  # llama.cpp with Metal, or with CUDA / Vulkan
     return DevicePool.CPU
 
 
@@ -150,6 +168,29 @@ def check_engine(engine: EngineId, hw: HardwareReport) -> SupportCheck:
             ),
         )
     return SupportCheck(supported=True)
+
+
+def unused_gpu_warning(
+    engine: EngineId, hw: HardwareReport, gpu_backends: frozenset[str] | None
+) -> str | None:
+    """Why an installed llama.cpp runs on the CPU although this machine has a GPU (or None)."""
+    if engine != EngineId.LLAMACPP or gpu_backends is None:
+        return None
+    if device_pool(engine, hw, gpu_backends) != DevicePool.CPU:
+        return None
+    if hw.accelerators_of(AcceleratorKind.APPLE_GPU):
+        return (
+            "This llama.cpp build reports no Metal GPU, so it runs on the CPU, much slower. "
+            "Reinstall it with Metal support: `brew reinstall llama.cpp`."
+        )
+    if hw.accelerators_of(AcceleratorKind.NVIDIA_GPU):
+        vllm = " or vLLM" if check_engine(EngineId.VLLM, hw).supported else ""
+        return (
+            "This llama.cpp build reports no GPU it can use (no CUDA or Vulkan), so it runs on "
+            f"the CPU, much slower than on the NVIDIA GPU. Install a CUDA build of llama.cpp{vllm} "
+            "to use the GPU."
+        )
+    return None
 
 
 def check_quantization(engine: EngineId, quantization: str, hw: HardwareReport) -> SupportCheck:

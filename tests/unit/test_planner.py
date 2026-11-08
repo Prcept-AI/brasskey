@@ -3,7 +3,7 @@
 
 import pytest
 
-from brasskey.engines.types import EngineId
+from brasskey.engines.types import DevicePool, EngineId
 from brasskey.models.catalog import UnknownModelError, find_model, load_catalog
 from brasskey.models.hub import ModelSourceError
 from brasskey.planner import NoFitError, RunRequest, UnsupportedEngineError, plan_run
@@ -153,6 +153,24 @@ def test_old_gpu_falls_back_to_llama_cpp():
     p40 = machines.nvidia("Tesla P40", 24576, (6, 1), 347)
     result = plan(p40, model="qwen3-4b")
     assert result.engine == EngineId.LLAMACPP
+
+
+@pytest.mark.parametrize("model", [None, "qwen3-4b"])  # quick start, and a named model
+def test_cpu_only_llama_cpp_on_a_gpu_machine_is_planned_for_the_cpu(model):
+    hw = machines.l4()
+    request = RunRequest(model=model)
+    assumed = plan_run(request, hw, CATALOG, installed=[EngineId.LLAMACPP])
+    cpu_only = plan_run(
+        request,
+        hw,
+        CATALOG,
+        installed=[EngineId.LLAMACPP],
+        gpu_backends={EngineId.LLAMACPP: frozenset()},
+    )
+    assert assumed.engine == cpu_only.engine == EngineId.LLAMACPP  # the installed engine first
+    assert assumed.fit.budget.pool == DevicePool.NVIDIA_GPU
+    assert cpu_only.fit.budget.pool == DevicePool.CPU
+    assert any("reports no GPU it can use" in warning for warning in cpu_only.fit.warnings)
 
 
 def test_t4_skips_fp8_and_prefers_comfortable_awq():

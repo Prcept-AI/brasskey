@@ -41,10 +41,14 @@ EXECUTABLE = "llama-server"
 # Where package managers put it when it isn't on PATH (e.g. a GUI-launched shell).
 FALLBACK_DIRS = (Path("/opt/homebrew/bin"), Path("/usr/local/bin"), Path.home() / ".local" / "bin")
 DOCS_URL = "https://github.com/ggml-org/llama.cpp/blob/master/docs/install.md"
+CUDA_DOCS_URL = "https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md#cuda"
+REPO_URL = "https://github.com/ggml-org/llama.cpp"
+TESTED_BUILD = "b12110"  # the release tag of llama.cpp 0.9.0 (build 12110), which this targets
 ALL_GPU_LAYERS = "999"  # "offload every layer"; accepted by old and new versions alike
 
 _VERSION = re.compile(r"version:\s*(.+)")
 _FLAG = re.compile(r"(?<![\w-])(--[a-z0-9][a-z0-9-]*)")
+_DEVICES_HEADER = "Available devices:"  # printed by --list-devices, even with no GPU devices
 _DEVICE = re.compile(
     r"^\s*([A-Za-z]+)\d*:\s*(.+?)\s*\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)", re.MULTILINE
 )
@@ -150,22 +154,32 @@ class LlamaCppAdapter(EngineAdapter):
         help_out = self._run([executable, "--help"], timeout_s=10)
         flags = frozenset(_FLAG.findall(help_out.stdout + help_out.stderr))
         devices: tuple[EngineDevice, ...] = ()
+        devices_listed = False
         if "--list-devices" in flags:
             listed = self._run([executable, "--list-devices"], timeout_s=20)
-            devices = parse_devices(listed.stdout + listed.stderr)
+            listed_text = listed.stdout + listed.stderr
+            devices = parse_devices(listed_text)
+            # Only a complete listing proves a CPU-only build: a failed or unfamiliar listing
+            # leaves the backends unknown, and Brasskey keeps assuming the machine's GPU.
+            devices_listed = listed.ok and _DEVICES_HEADER in listed_text
+            if not devices_listed:
+                logger.debug(
+                    "llama-server --list-devices gave no device list (exit %d)", listed.returncode
+                )
         install = EngineInstall(
             engine=self.id,
             version=match.group(1).strip(),
             executable=(executable,),
             flags=flags,
             devices=devices,
+            devices_listed=devices_listed,
         )
         logger.debug(
             "llama.cpp %s at %s, %d flags, backends=%s",
             install.version,
             executable,
             len(flags),
-            install.backends or ("cpu",),
+            (install.backends or ("cpu",)) if devices_listed else "unknown",
         )
         return install
 
@@ -177,13 +191,19 @@ class LlamaCppAdapter(EngineAdapter):
                 docs_url=DOCS_URL,
             )
         if hw.accelerators_of(AcceleratorKind.NVIDIA_GPU):
+            # Package managers ship llama.cpp without CUDA on Linux, so build the tested version.
+            # One self-contained binary (static llama/ggml libraries) in ~/.local/bin, where
+            # detect() looks even when it isn't on PATH.
             return InstallHint(
-                summary="Install a CUDA build of llama.cpp so it can use your NVIDIA GPU.",
+                summary="Build llama.cpp with CUDA so it can use your NVIDIA GPU (needs git, "
+                "cmake and the CUDA toolkit; takes several minutes).",
                 commands=(
-                    "docker pull ghcr.io/ggml-org/llama.cpp:server-cuda",
-                    "or build it: cmake -B build -DGGML_CUDA=ON && cmake --build build -j",
+                    f"git clone --depth 1 --branch {TESTED_BUILD} {REPO_URL} && cd llama.cpp && "
+                    "cmake -B build -DGGML_CUDA=ON -DBUILD_SHARED_LIBS=OFF && "
+                    "cmake --build build -j --target llama-server && "
+                    "mkdir -p ~/.local/bin && cp build/bin/llama-server ~/.local/bin/",
                 ),
-                docs_url=DOCS_URL,
+                docs_url=CUDA_DOCS_URL,
             )
         return InstallHint(
             summary="Install llama.cpp with Homebrew.",
@@ -194,7 +214,7 @@ class LlamaCppAdapter(EngineAdapter):
     def build_launch(
         self, install: EngineInstall, model: LocalModel, options: ServeOptions, hw: HardwareReport
     ) -> LaunchSpec:
-        pool = device_pool(self.id, hw)
+        pool = device_pool(self.id, hw, install.gpu_backends)  # CPU-only builds: no GPU layers
         argv: list[str] = [
             *install.executable,
             "--model",

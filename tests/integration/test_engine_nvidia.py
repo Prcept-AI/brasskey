@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""The real thing on NVIDIA: ``brasskey run --engine vllm|sglang`` with Qwen3 0.6B.
+"""The real thing on NVIDIA: ``brasskey run --engine vllm|sglang|llamacpp`` with Qwen3 0.6B.
 
 Opt-in (``uv run pytest -m gpu``), meant for a Linux machine with an NVIDIA GPU such as an AWS
 g6.xlarge (docs/gpu-testing.md). Each engine runs through whatever Brasskey detects: ``vllm`` /
 ``sglang`` on PATH, or the pinned Docker image (pulled on first use: 9.2 GB for vLLM, 14.4 GB
-for SGLang). Engines that aren't available are skipped with the reason.
+for SGLang). llama.cpp runs when a CUDA build is installed (the build command `brasskey doctor`
+shows; docs/gpu-testing.md). Engines that aren't available are skipped with the reason.
 """
 
 import json
@@ -20,6 +21,7 @@ import httpx2
 import psutil
 import pytest
 
+from brasskey.engines.capabilities import GPU_SERVER_ENGINES
 from brasskey.engines.registry import adapter_for
 from brasskey.engines.types import EngineId
 from fakes.helpers import fake_api_key, free_port, read_line
@@ -43,13 +45,15 @@ def running_containers(name_filter: str) -> list[str]:
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="NVIDIA engines need Linux")
-@pytest.mark.parametrize("engine", [EngineId.VLLM, EngineId.SGLANG])
+@pytest.mark.parametrize("engine", [EngineId.VLLM, EngineId.SGLANG, EngineId.LLAMACPP])
 def test_run_qwen3_0_6b_on_nvidia(engine: EngineId, tmp_path: Path) -> None:
     adapter = adapter_for(engine)
     assert adapter is not None
     install = adapter.detect()
     if install is None:
         pytest.skip(f"{engine.display_name}: not on PATH and no Docker with the NVIDIA toolkit")
+    if engine == EngineId.LLAMACPP and "cuda" not in (install.gpu_backends or ()):
+        pytest.skip("llama.cpp: no CUDA build found (build it as docs/gpu-testing.md shows)")
 
     home = tmp_path / "brasskey-home"
     env = {**os.environ, "BRASSKEY_HOME": str(home), "NO_COLOR": "1",
@@ -66,7 +70,8 @@ def test_run_qwen3_0_6b_on_nvidia(engine: EngineId, tmp_path: Path) -> None:
         assert data["status"] == "ready", data
         assert data["engine"] == engine.value
         assert data["engine_runtime"] == install.runtime
-        assert data["gpu_indices"]
+        if engine in GPU_SERVER_ENGINES:
+            assert data["gpu_indices"]
         base = data["base_url"]
         engine_port = data["engine_port"]
 
@@ -109,7 +114,11 @@ def test_run_qwen3_0_6b_on_nvidia(engine: EngineId, tmp_path: Path) -> None:
         if install.runtime == "docker":
             assert running_containers(f"brasskey-{engine.value}-{engine_port}") == []
         assert not list((home / "state" / "servers").glob("*.json"))
-        assert MARKER not in Path(data["log_path"]).read_text(errors="replace")
+        log_text = Path(data["log_path"]).read_text(errors="replace")
+        assert MARKER not in log_text
+        if engine == EngineId.LLAMACPP:  # llama.cpp says where the model went
+            assert "layers to GPU" in log_text
+            assert "offloaded 0/" not in log_text
         lock = (tmp_path / "brasskey.lock").read_text()
         assert f"runtime: {install.runtime}" in lock
         assert str(Path.home()) not in lock

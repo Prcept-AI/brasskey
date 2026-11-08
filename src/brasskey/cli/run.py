@@ -50,7 +50,13 @@ from brasskey.engines.base import (
     ServeOptions,
 )
 from brasskey.engines.capabilities import GPU_SERVER_ENGINES, check_cuda_driver, choose_gpus
-from brasskey.engines.registry import adapter_for, detect_engines, refine_hardware, runnable_engines
+from brasskey.engines.registry import (
+    adapter_for,
+    detect_engines,
+    refine_hardware,
+    reported_gpu_backends,
+    runnable_engines,
+)
 from brasskey.engines.types import EngineId
 from brasskey.errors import BrasskeyError, ExitCode
 from brasskey.hardware import HardwareReport, probe_hardware
@@ -216,6 +222,7 @@ def _resolve(
 ) -> Resolved:
     runnable = runnable_engines()
     installed = [engine_id for engine_id, found in installs.items() if found is not None]
+    gpu_backends = reported_gpu_backends(installs)  # e.g. a CPU-only llama.cpp: plan for the CPU
     notes: list[str] = []
     file_intent = None
     lock = None
@@ -234,7 +241,7 @@ def _resolve(
 
     if lock is not None and not overridden:
         if file_intent is None or lock.intent_sha256 == intent_sha256(file_intent):
-            plan = plan_from_lock(lock, hw, runnable=runnable)
+            plan = plan_from_lock(lock, hw, runnable=runnable, gpu_backends=gpu_backends)
             return Resolved(
                 plan=plan,
                 intent=file_intent,
@@ -267,6 +274,7 @@ def _resolve(
         cached_bytes=hub.cached_bytes,
         runnable=runnable,
         installed=installed,
+        gpu_backends=gpu_backends,
     )
     host = cli.host or serve.host
     intent = file_intent or Intent(

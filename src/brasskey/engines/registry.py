@@ -59,6 +59,23 @@ def detect_engines(
     return found
 
 
+def reported_gpu_backends(
+    installs: Mapping[EngineId, EngineInstall | None],
+) -> dict[EngineId, frozenset[str]]:
+    """GPU backends that installed engines reported themselves (an empty set: CPU only).
+
+    Engines that can't list their devices are left out, so the planner keeps assuming they use
+    the machine's GPU.
+    """
+    reported = {
+        engine: install.gpu_backends
+        for engine, install in installs.items()
+        if install is not None and install.gpu_backends is not None
+    }
+    logger.debug("GPU backends reported by installed engines: %s", reported)
+    return reported
+
+
 def refine_hardware(
     hw: HardwareReport, installs: Mapping[EngineId, EngineInstall | None]
 ) -> HardwareReport:

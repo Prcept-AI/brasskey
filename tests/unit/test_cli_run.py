@@ -113,6 +113,17 @@ def test_dry_run_json(cli, world):
     assert data["plan"]["install"]["version"] == "0.0.0-fake"
 
 
+def test_dry_run_with_a_cpu_only_llama_cpp_on_a_gpu_machine(cli, world, monkeypatch):
+    world["hw"] = machines.l4()
+    cpu_only = FAKE_INSTALL.model_copy(update={"devices_listed": True})  # listed, no GPU
+    monkeypatch.setattr("brasskey.cli.run.detect_engines", lambda: {EngineId.LLAMACPP: cpu_only})
+    data = cli("run", "qwen3-4b", "--dry-run", "--json").json()["data"]
+    assert data["plan"]["engine"] == "llamacpp"
+    assert data["plan"]["fit"]["budget"]["pool"] == "cpu"
+    assert any("reports no GPU it can use" in w for w in data["plan"]["fit"]["warnings"])
+    assert "reports no GPU it can use" in cli("run", "qwen3-4b", "--dry-run").stdout
+
+
 def test_offline_skips_the_speed_test(cli, world):
     assert "speed not measured: offline" in cli("run", "--dry-run", "--offline").stdout
     assert world["probes"] == []

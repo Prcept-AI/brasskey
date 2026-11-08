@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from brasskey.engines.capabilities import device_pool, memory_profile
+from brasskey.engines.capabilities import device_pool, memory_profile, unused_gpu_warning
 from brasskey.engines.types import DevicePool, EngineId, EngineMemoryProfile
 from brasskey.hardware.types import GIB, AcceleratorKind, HardwareReport
 from brasskey.models.types import CatalogModel, ModelArchitecture, ModelArtifact
@@ -78,10 +78,14 @@ def _gib(size: int) -> str:
 
 
 def memory_budget(
-    engine: EngineId, hw: HardwareReport, profile: EngineMemoryProfile
+    engine: EngineId,
+    hw: HardwareReport,
+    profile: EngineMemoryProfile,
+    *,
+    pool: DevicePool | None = None,
 ) -> MemoryBudget:
-    """How much memory ``engine`` may use on this machine."""
-    pool = device_pool(engine, hw)
+    """How much memory ``engine`` may use on this machine (in ``pool``, default: its usual one)."""
+    pool = pool if pool is not None else device_pool(engine, hw)
     if pool == DevicePool.APPLE_GPU:
         gpu = hw.accelerators_of(AcceleratorKind.APPLE_GPU)[0]
         about = "about " if gpu.memory_is_estimate else ""
@@ -209,12 +213,17 @@ def estimate_fit(
     *,
     context_length: int,
     concurrency: int = 1,
+    gpu_backends: frozenset[str] | None = None,
 ) -> FitEstimate:
-    """Estimate memory for ``model`` as ``artifact`` on ``engine`` at this context length."""
+    """Estimate memory for ``model`` as ``artifact`` on ``engine`` at this context length.
+
+    ``gpu_backends``: what an installed engine reported it can use (see ``device_pool``); a
+    llama.cpp build without a GPU backend is planned for the CPU, with a warning.
+    """
     arch = model.architecture
-    pool = device_pool(engine, hw)
+    pool = device_pool(engine, hw, gpu_backends)
     profile = memory_profile(engine, pool)
-    budget = memory_budget(engine, hw, profile)
+    budget = memory_budget(engine, hw, profile, pool=pool)
     context = min(context_length, arch.max_context)
     weights = artifact.weights_bytes
     kv_total = arch.kv_bytes(context, profile.kv_bytes_per_element) * concurrency
@@ -246,6 +255,9 @@ def estimate_fit(
         notes.append(f"Split across {devices} GPUs.")
 
     warnings: list[str] = []
+    unused_gpu = unused_gpu_warning(engine, hw, gpu_backends)
+    if unused_gpu is not None:
+        warnings.append(unused_gpu)
     available = budget.available_now_bytes
     if fits and available is not None:
         if pool == DevicePool.NVIDIA_GPU and profile.preallocates:

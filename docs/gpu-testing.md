@@ -3,7 +3,8 @@
 `uv run pytest -m gpu` runs the real-hardware tests:
 
 - the NVML probe (`tests/integration/test_hw_real.py`);
-- `brasskey run` with vLLM and SGLang on Qwen3 0.6B (`tests/integration/test_engine_nvidia.py`).
+- `brasskey run` with vLLM, SGLang and a CUDA build of llama.cpp on Qwen3 0.6B
+  (`tests/integration/test_engine_nvidia.py`).
 
 They need Linux and an NVIDIA GPU, so they run on a cloud instance, not on a laptop or in CI.
 
@@ -39,11 +40,30 @@ uv sync
 uv run brasskey doctor                   # GPUs, driver, vLLM / SGLang (Docker, pinned images)
 uv run brasskey run --dry-run            # what Brasskey would start here
 uv run pytest                            # unit tests (no GPU needed)
-uv run pytest -m gpu -v                  # real NVML + vLLM + SGLang
+```
+
+Then build llama.cpp with CUDA, exactly as Brasskey tells users to:
+
+```bash
+sudo apt-get install -y cmake            # if `cmake --version` fails
+export PATH=/usr/local/cuda/bin:$PATH    # if cmake can't find nvcc
+uv run brasskey run qwen3-0.6b --engine llamacpp --dry-run   # Next: the CUDA build command
+# run that command from your home folder; time it
+uv run brasskey doctor                   # llama.cpp now lists CUDA
+uv run pytest -m gpu -v                  # real NVML + vLLM + SGLang + llama.cpp (CUDA)
 ```
 
 The first `-m gpu` run pulls both images and downloads Qwen3 0.6B (1.5 GB), so allow
 20–30 minutes. Later runs take minutes.
+
+Optional: check the warning for a llama.cpp build without CUDA on this GPU machine.
+
+```bash
+cd ~/llama.cpp && cmake -B build-cpu -DBUILD_SHARED_LIBS=OFF \
+  && cmake --build build-cpu -j --target llama-server && cd ~/brasskey
+PATH=~/llama.cpp/build-cpu/bin:$PATH uv run brasskey run qwen3-0.6b --engine llamacpp --dry-run
+# expected: planned for system RAM, with "This llama.cpp build reports no GPU it can use"
+```
 
 To try it by hand:
 
@@ -58,6 +78,7 @@ uv run brasskey doctor --security
 
 - The output of `uv run pytest -m gpu -v`.
 - `uv run brasskey doctor --json`.
+- How long the llama.cpp CUDA build took, and any error from it.
 - For any failure, the engine log path printed in the error.
 
 The assumptions most likely to need adjusting are listed in

@@ -115,9 +115,17 @@ def lock_from_plan(
 
 
 def plan_from_lock(
-    lock: Lock, hw: HardwareReport, *, runnable: Collection[EngineId] | None = None
+    lock: Lock,
+    hw: HardwareReport,
+    *,
+    runnable: Collection[EngineId] | None = None,
+    gpu_backends: Mapping[EngineId, frozenset[str]] | None = None,
 ) -> RunPlan:
-    """Replay a lock on this machine: same files and engine; memory re-estimated here."""
+    """Replay a lock on this machine: same files and engine; memory re-estimated here.
+
+    ``gpu_backends`` as in ``plan_run``: the installed engine here may lack the GPU backend the
+    locked machine had (e.g. a CPU-only llama.cpp), so the estimate uses what it reported.
+    """
     engine = lock.engine.id
     check = check_engine(engine, hw)
     if not check.supported:
@@ -153,6 +161,7 @@ def plan_from_lock(
         hw,
         context_length=lock.serve.context_length,
         concurrency=lock.serve.concurrency,
+        gpu_backends=(gpu_backends or {}).get(engine),
     )
     if not fit.fits:
         raise NoFitError(

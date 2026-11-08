@@ -8,7 +8,12 @@ import pytest
 from brasskey.engines import llamacpp
 from brasskey.engines.base import EngineInstall, LocalModel, ServeOptions
 from brasskey.engines.llamacpp import LlamaCppAdapter, parse_devices
-from brasskey.engines.registry import METAL_NOTE, detect_engines, refine_hardware
+from brasskey.engines.registry import (
+    METAL_NOTE,
+    detect_engines,
+    refine_hardware,
+    reported_gpu_backends,
+)
 from brasskey.engines.types import EngineId
 from brasskey.hardware.commands import CommandOutput
 from brasskey.hardware.types import GIB, MIB
@@ -82,6 +87,44 @@ def test_parse_cuda_and_vulkan_devices_and_skip_blas():
     ]
 
 
+# --list-devices of a CUDA build and of CPU-only builds (llama.cpp b12110, common/arg.cpp:
+# common_print_available_devices skips CPU devices and prints "(none)" when nothing is left).
+CUDA_DEVICES = "Available devices:\n  CUDA0: NVIDIA H100 80GB HBM3 (81559 MiB, 80950 MiB free)\n"
+CPU_ONLY_DEVICES = "Available devices:\n  (none)\n"
+CPU_BLAS_DEVICES = "Available devices:\n  BLAS: OpenBLAS (0 MiB, 0 MiB free)\n"
+
+
+def test_the_device_list_tells_gpu_builds_from_cpu_only_builds():
+    assert installed().gpu_backends == frozenset({"metal"})
+    cuda = detect(devices=CUDA_DEVICES)
+    assert cuda is not None
+    assert cuda.gpu_backends == frozenset({"cuda"})
+    for listing in (CPU_ONLY_DEVICES, CPU_BLAS_DEVICES):
+        cpu_only = detect(devices=listing)
+        assert cpu_only is not None
+        assert cpu_only.devices == ()
+        assert cpu_only.devices_listed is True
+        assert cpu_only.gpu_backends == frozenset()  # measured: no GPU backend at all
+
+
+def test_backends_stay_unknown_without_a_complete_device_list():
+    def listing_fails(argv, *, timeout_s=5.0):
+        if argv[1] == "--list-devices":
+            return CommandOutput(1, "", "ggml_cuda_init: failed to initialize CUDA\n")
+        return runner()(argv, timeout_s=timeout_s)
+
+    failed = LlamaCppAdapter(run=listing_fails, which="/usr/local/bin/llama-server").detect()
+    assert failed is not None
+    assert failed.gpu_backends is None  # not proof of a CPU-only build
+    unfamiliar = detect(devices="something else entirely\n")
+    assert unfamiliar is not None
+    assert unfamiliar.gpu_backends is None
+    old = detect(help_text=HELP.replace("--list-devices", "--list-things"))
+    assert old is not None
+    assert "--list-devices" not in old.flags
+    assert old.gpu_backends is None
+
+
 def local_model() -> LocalModel:
     gguf = Path("/cache/snapshots/x/tiny-Q4_K_M.gguf")
     return LocalModel(artifact=TINY_ARTIFACT, snapshot_dir=gguf.parent, files=(gguf,))
@@ -122,6 +165,23 @@ def test_launch_on_cpu_keeps_layers_on_the_cpu_and_slots_share_context():
     argv = list(spec.argv)
     assert argv[argv.index("--n-gpu-layers") + 1] == "0"
     assert argv[argv.index("--ctx-size") + 1] == str(8192 * 4)
+
+
+@pytest.mark.parametrize(
+    ("devices", "listed", "layers"),
+    [
+        (CUDA_DEVICES, True, "999"),
+        (CPU_ONLY_DEVICES, True, "0"),  # a CPU-only build on a GPU machine
+        (CPU_ONLY_DEVICES, False, "999"),  # unknown: assume the GPU, as before
+    ],
+)
+def test_gpu_layers_follow_what_the_build_can_use_on_an_nvidia_machine(devices, listed, layers):
+    install = detect(devices=devices)
+    assert install is not None
+    install = install.model_copy(update={"devices_listed": listed})
+    spec = LlamaCppAdapter().build_launch(install, local_model(), options(), machines.h100())
+    argv = list(spec.argv)
+    assert argv[argv.index("--n-gpu-layers") + 1] == layers
 
 
 def test_older_versions_get_only_the_flags_they_know():
@@ -179,12 +239,28 @@ def test_unknown_failure_is_left_to_the_log_tail():
     ("hw", "command"),
     [
         (machines.m3_pro_18gb(), "brew install llama.cpp"),
-        (machines.h100(), "docker pull ghcr.io/ggml-org/llama.cpp:server-cuda"),
         (machines.cpu_only(16), "brew install llama.cpp"),
     ],
 )
 def test_install_hints(hw, command):
     assert LlamaCppAdapter().install_hint(hw).commands[0] == command
+
+
+def test_nvidia_hint_builds_the_tested_version_with_cuda_where_detect_finds_it():
+    hint = LlamaCppAdapter().install_hint(machines.h100())
+    (command,) = hint.commands  # one command: it becomes the `Next:` line
+    assert command.startswith(
+        "git clone --depth 1 --branch b12110 https://github.com/ggml-org/llama.cpp && "
+    )
+    # The tag is the version the fixtures captured (and the adapter was written against).
+    assert f"(build {llamacpp.TESTED_BUILD.removeprefix('b')}, commit cd959bae9)" in VERSION
+    assert "-DGGML_CUDA=ON" in command
+    assert "-DBUILD_SHARED_LIBS=OFF" in command  # one self-contained binary to copy
+    assert command.endswith("cp build/bin/llama-server ~/.local/bin/")
+    assert Path.home() / ".local" / "bin" in llamacpp.FALLBACK_DIRS  # found even off PATH
+    assert "docker" not in command  # a container image isn't something detect() can find
+    assert hint.docs_url is not None
+    assert hint.docs_url.endswith("build.md#cuda")
 
 
 # --- registry -------------------------------------------------------------------------------------
@@ -200,6 +276,19 @@ def test_metal_measurement_replaces_the_macos_estimate():
     assert METAL_NOTE in gpu.notes
     assert refine_hardware(hw, {EngineId.LLAMACPP: None}) == hw
     assert refine_hardware(machines.h100(), {EngineId.LLAMACPP: detect()}) == machines.h100()
+
+
+def test_reported_gpu_backends_leave_out_engines_that_cannot_list_devices():
+    cpu_only = detect(devices=CPU_ONLY_DEVICES)
+    assert cpu_only is not None
+    unknown = cpu_only.model_copy(update={"devices_listed": False})
+    assert reported_gpu_backends({EngineId.LLAMACPP: cpu_only, EngineId.MLX: None}) == {
+        EngineId.LLAMACPP: frozenset()
+    }
+    assert reported_gpu_backends({EngineId.LLAMACPP: installed()}) == {
+        EngineId.LLAMACPP: frozenset({"metal"})
+    }
+    assert reported_gpu_backends({EngineId.LLAMACPP: unknown}) == {}
 
 
 def test_detect_engines_with_injected_adapters():

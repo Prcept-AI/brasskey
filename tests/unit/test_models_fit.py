@@ -13,11 +13,17 @@ from fakes import machines
 CATALOG = load_catalog()
 
 
-def catalog_fit(model_id, quant, engine, hw, context=8192, concurrency=1):
+def catalog_fit(model_id, quant, engine, hw, context=8192, concurrency=1, gpu_backends=None):
     model = find_model(CATALOG, model_id)
     artifact = next(a for a in model.artifacts_for(engine) if a.quantization == quant)
     return estimate_fit(
-        model, artifact, engine, hw, context_length=context, concurrency=concurrency
+        model,
+        artifact,
+        engine,
+        hw,
+        context_length=context,
+        concurrency=concurrency,
+        gpu_backends=gpu_backends,
     )
 
 
@@ -160,6 +166,47 @@ def test_small_machine_keeps_at_least_1_gib_for_the_system():
     assert fit.budget.per_device_bytes == 3 * GIB
     assert fit.fits
     assert fit.est_decode_tokens_per_s is None  # no bandwidth figure for system RAM
+
+
+NO_GPU: frozenset[str] = frozenset()  # an installed build that listed no GPU device
+
+
+def llama_4b(hw, gpu_backends=None):
+    """Qwen3 4B on llama.cpp; ``gpu_backends`` as a build reported them (None: unknown)."""
+    return catalog_fit("qwen3-4b", "Q4_K_M", EngineId.LLAMACPP, hw, gpu_backends=gpu_backends)
+
+
+def test_cpu_only_llama_cpp_on_an_nvidia_machine_is_planned_for_the_cpu():
+    hw = machines.h100(ram_gib=64)
+    assumed = llama_4b(hw)  # not installed yet: unknown
+    cuda = llama_4b(hw, frozenset({"cuda"}))
+    cpu = llama_4b(hw, NO_GPU)
+    assert cuda == assumed  # a CUDA build is what the plan assumed all along
+    assert assumed.budget.pool == DevicePool.NVIDIA_GPU
+    assert assumed.warnings == ()
+    assert cpu.budget.pool == DevicePool.CPU
+    assert "RAM" in cpu.budget.explanation
+    assert cpu.est_decode_tokens_per_s is None  # the GPU's bandwidth no longer applies
+    (warning,) = cpu.warnings
+    assert "reports no GPU it can use" in warning
+    assert "Install a CUDA build of llama.cpp or vLLM" in warning  # vLLM runs on Linux
+
+
+def test_llama_cpp_without_metal_on_a_mac_is_planned_for_the_cpu():
+    hw = machines.m3_pro_18gb()
+    metal = llama_4b(hw, frozenset({"metal"}))
+    cpu = llama_4b(hw, NO_GPU)
+    assert metal.budget.pool == DevicePool.APPLE_GPU
+    assert cpu.budget.pool == DevicePool.CPU
+    assert any("brew reinstall llama.cpp" in warning for warning in cpu.warnings)
+    assert not any("Metal" in warning for warning in metal.warnings)
+
+
+def test_reported_backends_only_change_llama_cpp():
+    hw = machines.h100()
+    vllm = catalog_fit("qwen3-4b", "bf16", EngineId.VLLM, hw)
+    assert catalog_fit("qwen3-4b", "bf16", EngineId.VLLM, hw, gpu_backends=frozenset()) == vllm
+    assert llama_4b(machines.cpu_only(32), NO_GPU) == llama_4b(machines.cpu_only(32))  # no warning
 
 
 def test_low_free_memory_on_a_mac_warns():
