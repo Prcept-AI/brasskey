@@ -33,6 +33,7 @@ uv run pyright                                  # strict for src/ and scripts/
 uv run python scripts/check_licenses.py         # dependency license policy
 uv build --build-constraints scripts/build-constraints.txt --require-hashes --no-create-gitignore
 python3 scripts/check_dist.py dist              # what a release would publish
+sh scripts/check_secrets.sh                     # credentials: working tree and all history
 ```
 
 CI runs all of these on Linux and macOS (Apple Silicon) with Python 3.11 to 3.14. Releases are
@@ -53,6 +54,10 @@ published by CI only; see [RELEASING.md](RELEASING.md).
 - **Measure, don't guess:** recommendations are backed by a measurement or clearly labeled as an
   estimate.
 - **Privacy:** never log or store prompt content, API keys or tokens.
+- **No credentials in the repository:** run `sh scripts/check_secrets.sh` before every commit
+  and push (gitleaks on the working tree and all history; a test also checks common token
+  formats). Tests get keys from `fake_api_key()` in `tests/fakes/helpers.py`, never hard-coded
+  strings. A leaked credential is revoked and rotated, not just deleted.
 - **Secure defaults:** servers bind to `127.0.0.1`; any other address requires an API key. Keys
   come from environment variables or the OS keyring and never appear on command lines, in logs or
   in lock files. Telemetry is off; nothing leaves the machine without explicit opt-in.

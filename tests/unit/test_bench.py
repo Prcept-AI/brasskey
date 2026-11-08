@@ -44,12 +44,13 @@ from brasskey.bench.tokenizer import choose_tokenizer, fetch_tokenizer
 from brasskey.hardware.commands import CommandOutput
 from brasskey.models.catalog import load_catalog
 from brasskey.security.apikeys import ApiKey
+from fakes.helpers import fake_api_key
 from fakes.hub import FakeHub
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "bench"
 REPORT = (FIXTURES / "guidellm-0.8.1-report.json").read_text()
 FAKE_GUIDELLM = Path(__file__).resolve().parent.parent / "fakes" / "fake_guidellm.py"
-KEY = ApiKey("bk-bench-test-7Hc2Lq9XzP4mVw8RtY6nJ3aK", "env:BRASSKEY_API_KEY")
+KEY = ApiKey(fake_api_key("bench"), "env:BRASSKEY_API_KEY")
 
 
 # --- statistics ----------------------------------------------------------------------------

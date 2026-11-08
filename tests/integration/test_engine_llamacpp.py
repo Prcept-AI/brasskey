@@ -18,12 +18,12 @@ import httpx2
 import psutil
 import pytest
 
-from fakes.helpers import free_port, read_line
+from fakes.helpers import fake_api_key, free_port, read_line
 
 pytestmark = pytest.mark.engine
 
 MARKER = "brasskey-privacy-marker-7f3a"
-CLIENT_KEY = "bk-integration-Q7wE9rT2yU4iO6pA8sD0fG1h"
+CLIENT_KEY = fake_api_key("integration")
 
 
 @pytest.mark.skipif(shutil.which("llama-server") is None, reason="llama.cpp is not installed")

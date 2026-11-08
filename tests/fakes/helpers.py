@@ -1,9 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Small helpers shared by the real-engine integration tests."""
+"""Small helpers shared by the tests."""
 
+import secrets
 import socket
 import threading
 from typing import IO
+
+
+def fake_api_key(label: str = "test") -> str:
+    """A strong, random Brasskey-format key for one test run.
+
+    Generated at run time so no key-like string is ever committed: secret scanners stay quiet,
+    and nothing in the repository could be mistaken for a real credential.
+    """
+    return f"bk-{label}-{secrets.token_urlsafe(24)}"
 
 
 def free_port() -> int:

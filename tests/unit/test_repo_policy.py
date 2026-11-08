@@ -2,6 +2,9 @@
 """Repository policies: SPDX headers, opt-in test markers and the license checker."""
 
 import importlib.util
+import re
+import shutil
+import subprocess
 from pathlib import Path
 from types import ModuleType
 
@@ -133,3 +136,56 @@ def test_classifiers_and_free_form_fields(licenses):
     assert gpl_text.status == "denied"
     nothing = check("d", "1", expression=None, classifiers=[], license_field="UNKNOWN")
     assert nothing.status == "unknown"
+
+
+# --- no credentials in the repository -----------------------------------------------------------
+
+# High-signal credential formats. Written so these lines can't match themselves.
+CREDENTIAL_PATTERNS = {
+    "AWS access key": r"\b(AKIA|ASIA)[0-9A-Z]{16}\b",
+    "GitHub token": r"\b(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})",
+    "PyPI token": r"\bpypi-AgE[A-Za-z0-9_-]{50,}",
+    "Hugging Face token": r"\bhf_[A-Za-z0-9]{30,}",
+    "OpenAI / Anthropic key": r"\bsk-(ant-)?[A-Za-z0-9_-]{32,}",
+    "Slack token": r"\bxox[abprs]-[A-Za-z0-9-]{10,}",
+    "Google API key": r"\bAIza[0-9A-Za-z_-]{35}",
+    "private key": r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    "hard-coded Brasskey key": r"[\"']bk-[A-Za-z0-9_-]{16,}[\"']",
+}
+SCANNED_SUFFIXES = {".py", ".sh", ".toml", ".yml", ".yaml", ".json", ".md", ".txt", ".cfg"}
+
+
+def _repository_text_files() -> list[Path]:
+    files: list[Path] = []
+    for folder in ("src", "tests", "scripts", ".github", "docs", "schemas"):
+        files.extend(p for p in (ROOT / folder).rglob("*") if p.suffix in SCANNED_SUFFIXES)
+    files.extend(p for p in ROOT.glob("*") if p.is_file() and p.suffix in SCANNED_SUFFIXES)
+    return sorted(files)
+
+
+def test_no_credentials_in_the_repository():
+    """Real tokens never belong in the repo; test keys come from fakes.helpers.fake_api_key()."""
+    found = []
+    for path in _repository_text_files():
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for name, pattern in CREDENTIAL_PATTERNS.items():
+            for match in re.finditer(pattern, text):
+                line = text.count("\n", 0, match.start()) + 1
+                found.append(f"{path.relative_to(ROOT)}:{line}: {name}")
+    assert not found, "Possible credentials (run scripts/check_secrets.sh):\n" + "\n".join(found)
+
+
+def test_no_secret_files_are_tracked():
+    git = shutil.which("git")
+    if git is None or not (ROOT / ".git").exists():
+        pytest.skip("not a git checkout")
+    tracked = subprocess.run(
+        [git, "ls-files"], cwd=ROOT, capture_output=True, text=True, check=False
+    ).stdout.split()
+    risky = [
+        name for name in tracked
+        if Path(name).name in {".env", ".netrc", ".pypirc", "id_rsa", "id_ed25519"}
+        or Path(name).suffix in {".pem", ".key", ".p12", ".pfx"}
+        or Path(name).name.startswith(".env.")
+    ]  # fmt: skip
+    assert not risky, f"Files that usually hold secrets are tracked: {risky}"

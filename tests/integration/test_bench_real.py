@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from fakes.helpers import free_port, read_line
+from fakes.helpers import fake_api_key, free_port, read_line
 
 pytestmark = pytest.mark.engine
 
-KEY = "bk-bench-integration-Lq9XzP4mVw8RtY6nJ3aK"
+KEY = fake_api_key("bench")
 
 
 @pytest.mark.skipif(shutil.which("llama-server") is None, reason="llama.cpp is not installed")

@@ -16,11 +16,12 @@ from brasskey.models.catalog import load_catalog
 from brasskey.planner import RunRequest, plan_run
 from brasskey.planner.replay import lock_from_plan
 from fakes import machines
+from fakes.helpers import fake_api_key
 from fakes.hub import FakeHub
 
 CANDIDATE = "http://127.0.0.1:8812/v1"
 BASELINE = "http://127.0.0.1:8811/v1"
-KEY = "bk-cli-bench-7Hc2Lq9XzP4mVw8RtY6nJ3aK5sD1"
+KEY = fake_api_key("bench")
 READY = GuidellmInstall(version="0.8.1", runtime="uvx", executable=("uv", "tool", "run"))
 
 

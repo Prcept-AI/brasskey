@@ -20,6 +20,7 @@ from fakes.engine import (
     FakeMlxAdapter,
     FakeVllmAdapter,
 )
+from fakes.helpers import fake_api_key
 from fakes.hub import FakeHub
 
 
@@ -264,7 +265,7 @@ def test_real_run_with_mlx_runs_the_one_time_setup_first(cli, tiny, monkeypatch)
     assert "Stopped Tiny Test (MLX)." in result.stderr
 
 
-STRONG_KEY = "bk-7Hc2Lq9XzP4mVw8RtY6nJ3aK5sD1fG0e"
+STRONG_KEY = fake_api_key("cli")
 ANY_HOST = "0.0.0.0"  # noqa: S104 (tests of the network-exposure rules)
 
 

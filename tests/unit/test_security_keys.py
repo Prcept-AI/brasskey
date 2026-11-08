@@ -18,8 +18,9 @@ from brasskey.security.apikeys import (
     store_api_key,
 )
 from brasskey.security.policy import decide_security
+from fakes.helpers import fake_api_key
 
-STRONG = "bk-7Hc2Lq9XzP4mVw8RtY6nJ3aK5sD1fG0e"
+STRONG = fake_api_key("strong")
 
 
 def no_keyring(_service, _user):
@@ -75,12 +76,12 @@ def test_key_weakness(key, weak):
 
 
 def test_keys_are_hidden_from_repr_and_redacted_from_logs(capsys):
-    key = ApiKey(value="bk-super-secret-value-123456", source="env:X")
-    assert "super-secret" not in repr(key)
+    key = ApiKey(value=fake_api_key("redact"), source="env:X")
+    assert key.value not in repr(key)
     configure_logging(debug=True, json_mode=True)
     logging.getLogger("brasskey.test").debug("using key %s now", key.value)
-    assert "bk-super-secret-value-123456" not in capsys.readouterr().err
-    assert redact("x bk-super-secret-value-123456 y") == "x [redacted] y"
+    assert key.value not in capsys.readouterr().err
+    assert redact(f"x {key.value} y") == "x [redacted] y"
     configure_logging(debug=False, json_mode=False)
 
 

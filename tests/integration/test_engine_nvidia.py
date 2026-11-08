@@ -22,12 +22,12 @@ import pytest
 
 from brasskey.engines.registry import adapter_for
 from brasskey.engines.types import EngineId
-from fakes.helpers import free_port, read_line
+from fakes.helpers import fake_api_key, free_port, read_line
 
 pytestmark = pytest.mark.gpu
 
 MARKER = "brasskey-privacy-marker-gpu-5d2e"
-CLIENT_KEY = "bk-gpu-integration-Lq9XzP4mVw8RtY6nJ3aK"
+CLIENT_KEY = fake_api_key("gpu")
 FIRST_RUN_TIMEOUT_S = 3600  # image pull + model download + start
 
 

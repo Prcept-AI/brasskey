@@ -11,10 +11,10 @@ import pytest
 
 from brasskey.runtime.proxy import ProxyConfig, ProxyServer, ProxyStartError, create_app
 from fakes.engine import FAKE_ENGINE
-from fakes.helpers import free_port
+from fakes.helpers import fake_api_key, free_port
 
-KEY = "bk-client-key-0123456789abcdefABCDEF"
-ENGINE_KEY = "bk-engine-key-0123456789abcdefABCDEF"
+KEY = fake_api_key("client")
+ENGINE_KEY = fake_api_key("engine")
 
 
 @pytest.fixture(scope="module")

@@ -1,0 +1,8 @@
+# Reviewed historical findings (gitleaks fingerprints), never real credentials.
+# Commit d4d44d8 had hard-coded, made-up Brasskey test keys in three tests; they unlocked nothing
+# and were replaced by keys generated at test time (tests/fakes/helpers.py: fake_api_key).
+# Add a line here only after checking the finding by hand; never for a real secret, which must be
+# revoked and rotated instead.
+d4d44d839b28df063b580f06b0fef27783647566:tests/integration/test_bench_real.py:generic-api-key:22
+d4d44d839b28df063b580f06b0fef27783647566:tests/integration/test_engine_llamacpp.py:generic-api-key:26
+d4d44d839b28df063b580f06b0fef27783647566:tests/unit/test_cli_run.py:generic-api-key:267

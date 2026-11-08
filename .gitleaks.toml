@@ -1,0 +1,14 @@
+# Secret scanning (gitleaks): the default rules, plus allowlists for reviewed false positives only.
+# Each allowlist is as narrow as possible: one file AND one value pattern (condition = "AND").
+# Run: docker run --rm -v "$PWD":/repo:ro zricethezav/gitleaks:v8.30.1 dir /repo --redact
+#      docker run --rm -v "$PWD":/repo:ro zricethezav/gitleaks:v8.30.1 git /repo --redact
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Metric names in the benchmark metric table (key= is a field name, not a secret)"
+condition = "AND"
+paths = ['''^src/brasskey/bench/models\.py$''']
+regexTarget = "match"
+regexes = ['''^key="[a-z0-9]+(_[a-z0-9]+)*"$''']

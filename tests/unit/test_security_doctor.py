@@ -28,6 +28,7 @@ from brasskey.security.netinfo import (
     parse_docker_ps,
     parse_lsof,
 )
+from fakes.helpers import fake_api_key
 
 PRIVATE = ipaddress.ip_address("192.168.1.20")
 
@@ -183,7 +184,7 @@ def test_docker_env_flags_with_secret_values_are_flagged(argv, leaks):
 def test_api_key_strength():
     weak = run_checks(context(api_key=ApiKey("short-key-1", "env:BRASSKEY_API_KEY")))
     assert statuses(weak, "BK-SEC-008") == [CheckStatus.WARN]
-    strong = run_checks(context(api_key=ApiKey("bk-7Hc2Lq9XzP4mVw8RtY6nJ3aK5sD1fG0e", "keyring")))
+    strong = run_checks(context(api_key=ApiKey(fake_api_key("strong"), "keyring")))
     assert statuses(strong, "BK-SEC-008") == [CheckStatus.PASS]
 
 
