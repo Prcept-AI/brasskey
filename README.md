@@ -22,7 +22,7 @@ brasskey deploy     # ship it tuned, verified and secure (coming soon)
 
 ## Status
 
-Pre-alpha. 0.1.0a1 is the first release on PyPI, on the way to v0.1 "It runs": `brasskey run`,
+Pre-alpha. The current release is 0.1.0a2, on the way to v0.1 "It runs": `brasskey run`,
 `brasskey bench` and `brasskey doctor --security` on NVIDIA GPUs, Apple Silicon and CPUs, with
 llama.cpp, MLX, vLLM and SGLang. Done so far:
 
@@ -54,8 +54,8 @@ brasskey doctor                # what Brasskey sees on this machine
 brasskey run --dry-run         # the model it would pick for this machine, and why
 ```
 
-Or run it in a container (from the next release; linux/amd64 and linux/arm64), for example to
-check or benchmark a server:
+Or run it in a container (linux/amd64 and linux/arm64), for example to check or benchmark a
+server:
 
 ```bash
 docker run --rm ghcr.io/prcept-ai/brasskey:<version> doctor --security https://gpu-box.example/v1
