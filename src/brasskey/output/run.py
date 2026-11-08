@@ -9,7 +9,7 @@ from rich.text import Text
 
 from brasskey.engines.base import EngineInstall, InstallHint
 from brasskey.engines.types import EngineId
-from brasskey.output.hardware import LABEL_STYLE, NOTE_STYLE, format_gib
+from brasskey.output.hardware import LABEL_STYLE, NOTE_STYLE, WARNING_STYLE, format_gib
 from brasskey.output.plan import format_duration, format_gb
 from brasskey.planner import RunPlan
 from brasskey.security.policy import ServeSecurity
@@ -48,14 +48,22 @@ def new_key_notice(security: ServeSecurity) -> RenderableType:
         else f"Before the next run: export {security.key_env}=<this key> (it isn't stored "
         "anywhere else)."
     )
-    return Group(
+    lines = [
         Text(
             "New API key (shown only now; give it to the clients that should have access):",
             style=LABEL_STYLE,
         ),
         Text(f"  {security.api_key.value}"),
         Text(f"  {where}", style=NOTE_STYLE),
-    )
+    ]
+    if security.replaced_stored_key:
+        lines.append(
+            Text(
+                "  It replaces the key saved before: clients still using that one are refused.",
+                style=WARNING_STYLE,
+            )
+        )
+    return Group(*lines)
 
 
 def run_summary(

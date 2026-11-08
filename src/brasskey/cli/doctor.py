@@ -41,6 +41,14 @@ from brasskey.security.netinfo import Prober, make_prober
 logger = logging.getLogger(__name__)
 
 
+def _engine_name(engine: str) -> str:
+    """ "llama.cpp" for a state file's "llamacpp" (an unknown id is shown as it is)."""
+    try:
+        return EngineId(engine).display_name
+    except ValueError:
+        return engine
+
+
 def gather_security_context(os_family: str) -> SecurityContext:
     """Seam for tests: the read-only facts behind --security."""
     return gather_context(os_family)
@@ -96,7 +104,8 @@ def doctor_command(
         support = check_engine(engine, report)
         if install is None and not support.supported:
             engine_lines.append(
-                Text(f"  {engine.display_name}: not for this machine ({support.reasons[0]})")
+                # The reason is a full sentence, so it follows instead of nesting in parentheses.
+                Text(f"  {engine.display_name}: not for this machine. {support.reasons[0]}")
             )
             continue
         adapter = adapter_for(engine)
@@ -120,8 +129,8 @@ def doctor_command(
         server_lines = [Text(""), Text("Running servers", style=LABEL_STYLE)]
         server_lines += [
             Text(
-                f"  {server.model_id} at {server.base_url} ({server.engine}, pid {server.pid}, "
-                f"since {server.started_at:%Y-%m-%d %H:%M} UTC)"
+                f"  {server.model_id} at {server.base_url} ({_engine_name(server.engine)}, pid "
+                f"{server.pid}, since {server.started_at:%Y-%m-%d %H:%M} UTC)"
             )
             for server in servers
         ]

@@ -65,7 +65,11 @@ client ──> Brasskey proxy (--host:--port, the address users see)
     `--json` mode, in `data.security.generated_api_key`);
   - stores it in the keychain;
   - with `--api-key-env NAME`, or when no keychain is available, does not store it, and tells the
-    user to export the variable before the next run.
+    user to export the variable before the next run;
+  - says so when the new key replaces one saved earlier, because clients with the old key are
+    refused from then on;
+  - does nothing in a dry run: the plan says a new key is created when it starts, and its
+    `Next:` keeps `--generate-api-key`. A dry run never changes the keychain.
 - **Exposure rules:**
 
   | Address | Key | Result |

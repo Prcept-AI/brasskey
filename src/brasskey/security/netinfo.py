@@ -66,12 +66,20 @@ class ProcessInfo:
 
 @dataclass(frozen=True)
 class HttpProbe:
-    """What an unauthenticated request from a foreign web page gets back."""
+    """What unauthenticated requests get back.
+
+    ``status`` and ``looks_like_models`` come from a plain request, as a script or another
+    machine sends it: they decide whether a key is needed. ``allow_origin`` and ``origin_status``
+    come from a request with a foreign ``Origin`` header, as a web page sends it: they decide
+    whether any website could read the answers. One request can't answer both, because some
+    servers refuse foreign origins (HTTP 403) while needing no key at all (Ollama, Brasskey).
+    """
 
     url: str
     status: int
     allow_origin: str | None
     looks_like_models: bool
+    origin_status: int | None = None  # with the foreign Origin; None: not sent (same as status)
 
     @property
     def open_without_key(self) -> bool:
@@ -79,7 +87,8 @@ class HttpProbe:
 
     @property
     def readable_by_any_site(self) -> bool:
-        return self.allow_origin in ("*", PROBE_ORIGIN)
+        status = self.origin_status if self.origin_status is not None else self.status
+        return status == 200 and self.allow_origin in ("*", PROBE_ORIGIN)
 
 
 def _split_address(name: str) -> tuple[str, int] | None:
@@ -208,31 +217,56 @@ def own_processes() -> list[ProcessInfo]:
 Prober = Callable[[str], HttpProbe | None]
 
 
+def _looks_like_models(response: httpx2.Response) -> bool:
+    """A 200 with an OpenAI-style (``data``) or Ollama-style (``models``) model list."""
+    if response.status_code != 200:
+        return False
+    try:
+        body: object = response.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict):
+        return False
+    fields = cast(dict[str, object], body)
+    return isinstance(fields.get("data"), list) or isinstance(fields.get("models"), list)
+
+
 def make_prober(client: httpx2.Client | None = None) -> Prober:
-    """GET a models endpoint without a key, as a foreign web page would (Origin header)."""
+    """GET a models endpoint without a key: as a script would, then as a foreign web page would.
+
+    See ``HttpProbe`` for why these are two requests.
+    """
     active = client or httpx2.Client(timeout=PROBE_TIMEOUT_S, trust_env=False, verify=True)
 
     def probe(url: str) -> HttpProbe | None:
         try:
-            response = active.get(url, headers={"Origin": PROBE_ORIGIN})
+            plain = active.get(url)
         except httpx2.HTTPError:
             return None
-        looks = False
-        if response.status_code == 200:
+        looks = _looks_like_models(plain)
+        origin_status: int | None = None
+        allow_origin: str | None = None
+        if looks:  # only a server that answers without a key can leak answers to web pages
             try:
-                body: object = response.json()
-            except ValueError:
-                body = None
-            if isinstance(body, dict):
-                fields = cast(dict[str, object], body)
-                looks = isinstance(fields.get("data"), list) or isinstance(
-                    fields.get("models"), list
-                )
+                foreign = active.get(url, headers={"Origin": PROBE_ORIGIN})
+                origin_status = foreign.status_code
+                allow_origin = foreign.headers.get("access-control-allow-origin")
+            except httpx2.HTTPError:
+                origin_status = 0  # no answer for a web page: nothing it could read
+        logger.debug(
+            "Probe %s: status=%d models=%s origin_status=%s allow_origin=%s",
+            url,
+            plain.status_code,
+            looks,
+            origin_status,
+            allow_origin,
+        )
         return HttpProbe(
             url=url,
-            status=response.status_code,
-            allow_origin=response.headers.get("access-control-allow-origin"),
+            status=plain.status_code,
+            allow_origin=allow_origin,
             looks_like_models=looks,
+            origin_status=origin_status,
         )
 
     return probe

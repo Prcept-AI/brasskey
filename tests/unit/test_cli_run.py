@@ -2,10 +2,13 @@
 """``brasskey run`` end to end: dry runs, and real runs that start the fake engine process."""
 
 import os
+import re
+import socket
 
 import httpx2
 import pytest
 
+from brasskey.cli.app import _with_option
 from brasskey.engines.types import EngineId
 from brasskey.paths import resolve_paths
 from brasskey.runtime.state import list_records
@@ -312,19 +315,83 @@ def test_a_network_address_without_a_key_stops_before_downloading(cli, tiny):
     assert tiny["hub"].downloads == []
 
 
-def test_generate_api_key_shows_it_once_and_keeps_it_in_the_keychain(cli, world, monkeypatch):
+def test_a_dry_run_plans_a_new_key_without_creating_it(cli, world, monkeypatch):
     saved: list[str] = []
     monkeypatch.setattr("brasskey.cli.run.keyring_writer", lambda s, u, v: saved.append(v))
     result = cli("run", "qwen3-4b", "--dry-run", "--host", ANY_HOST, "--generate-api-key")
     assert result.exit_code == 0, result.output
+    assert saved == []  # a dry run leaves the keychain alone
+    assert "New API key" not in result.stderr
+    assert "API key required (a new one is created when it starts)" in result.stdout
+    assert "not encrypted" in result.stdout  # no TLS on the network: warned
+    assert result.last_line() == (
+        "Next: brasskey run qwen3-4b --host 0.0.0.0 --generate-api-key (start it)"
+    )
+    args = ("run", "qwen3-4b", "--dry-run", "--host", ANY_HOST, "--generate-api-key", "--json")
+    security = cli(*args).json()["data"]["security"]
+    assert security["new_key_on_start"] is True
+    assert security["api_key_source"] == "generated"
+    assert "generated_api_key" not in security
+    assert saved == []
+
+
+def test_generate_api_key_shows_it_once_and_keeps_it_in_the_keychain(cli, tiny, monkeypatch):
+    saved: list[str] = []
+    monkeypatch.setattr("brasskey.cli.run.keyring_writer", lambda s, u, v: saved.append(v))
+    result = cli("run", "tiny", "--yes", "--generate-api-key")
+    assert result.exit_code == 0, result.output
     assert len(saved) == 1
     assert saved[0] in result.stderr  # shown once
     assert "saved in your keychain" in result.stderr
+    assert "replaces the key saved before" not in result.stderr  # there was none
     assert "API key required (from your keychain)" in result.stdout
-    assert "not encrypted" in result.stdout  # no TLS on the network: warned
-    args = ("run", "qwen3-4b", "--dry-run", "--host", ANY_HOST, "--generate-api-key", "--json")
-    document = cli(*args).json()
-    assert document["data"]["security"]["generated_api_key"].startswith("bk-")
+
+
+def test_a_new_key_says_when_it_replaces_the_saved_one(cli, tiny, monkeypatch):
+    saved: list[str] = []
+    monkeypatch.setattr("brasskey.cli.run.keyring_reader", lambda _s, _u: fake_api_key("old"))
+    monkeypatch.setattr("brasskey.cli.run.keyring_writer", lambda s, u, v: saved.append(v))
+    result = cli("run", "tiny", "--yes", "--generate-api-key", "--json")
+    assert result.exit_code == 0, result.output
+    security = result.json()["data"]
+    assert security["replaced_stored_key"] is True
+    assert security["generated_api_key"] == saved[0]
+    text = cli("run", "tiny", "--yes", "--generate-api-key")
+    assert "replaces the key saved before" in text.stderr
+
+
+def test_a_busy_port_stops_before_downloading_and_suggests_a_free_one(cli, tiny):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        busy = listener.getsockname()[1]
+        result = cli("run", "tiny", "--yes", "--port", str(busy), "--save")
+    assert result.exit_code == 1
+    assert f"Port {busy} on 127.0.0.1 is already in use" in result.stderr
+    assert tiny["hub"].downloads == []  # checked before the download, not after
+    match = re.fullmatch(
+        r"Next: brasskey run tiny --yes --port (\d+) --save \(use port (\d+), which is free\)",
+        result.last_line(),
+    )
+    assert match is not None, result.last_line()
+    assert match[1] == match[2] != str(busy)
+
+
+def test_options_are_replaced_where_typed_or_added():
+    assert _with_option(["run", "--port", "9", "--save"], "--port", "8001") == [
+        "run", "--port", "8001", "--save",
+    ]  # fmt: skip
+    assert _with_option(["run", "--port=9"], "--port", "8001") == ["run", "--port", "8001"]
+    assert _with_option(["run"], "--port", "8001") == ["run", "--port", "8001"]  # yaml's port
+
+
+def test_without_a_terminal_the_next_step_repeats_the_command_with_yes(cli, world):
+    result = cli("run", "qwen3-4b", "--port", "9000")  # tests have no terminal to ask on
+    assert result.exit_code == 1
+    assert "needs confirmation" in result.stderr
+    assert result.last_line() == (
+        "Next: brasskey run qwen3-4b --port 9000 --yes (continue without a prompt)"
+    )
 
 
 def test_next_steps_keep_the_serving_options(cli, world, monkeypatch):
@@ -332,7 +399,7 @@ def test_next_steps_keep_the_serving_options(cli, world, monkeypatch):
     assert refused.exit_code == 1
     assert refused.last_line() == (
         "Next: brasskey run qwen3-4b --host 0.0.0.0 --port 9000 --dry-run --generate-api-key "
-        "(create a key)"
+        "(plan it with a new key)"
     )
     monkeypatch.setenv("TEAM_KEY", STRONG_KEY)
     planned = cli("run", "qwen3-4b", "--dry-run", "--host", ANY_HOST, "--api-key-env", "TEAM_KEY")
@@ -342,19 +409,18 @@ def test_next_steps_keep_the_serving_options(cli, world, monkeypatch):
     )
 
 
-def test_generated_key_without_a_keychain_says_which_variable_to_export(cli, world):
+def test_generated_key_without_a_keychain_says_which_variable_to_export(cli, tiny):
     # conftest makes every keychain write fail, as on a Linux server without a secret service.
-    result = cli("run", "qwen3-4b", "--dry-run", "--host", ANY_HOST, "--generate-api-key")
+    result = cli("run", "tiny", "--yes", "--generate-api-key")
     assert result.exit_code == 0, result.output
     assert "export BRASSKEY_API_KEY=<this key>" in result.stderr
     assert "API key required (generated for this run)" in result.stdout
 
 
-def test_generated_key_for_a_named_variable_is_not_hidden_in_the_keychain(cli, world, monkeypatch):
+def test_generated_key_for_a_named_variable_is_not_hidden_in_the_keychain(cli, tiny, monkeypatch):
     saved: list[str] = []
     monkeypatch.setattr("brasskey.cli.run.keyring_writer", lambda s, u, v: saved.append(v))
-    args = ("--dry-run", "--host", ANY_HOST, "--api-key-env", "TEAM_KEY", "--generate-api-key")
-    result = cli("run", "qwen3-4b", *args)
+    result = cli("run", "tiny", "--yes", "--api-key-env", "TEAM_KEY", "--generate-api-key")
     assert result.exit_code == 0, result.output
     assert saved == []
     assert "export TEAM_KEY=<this key>" in result.stderr

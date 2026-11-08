@@ -448,12 +448,14 @@ def run_command(
             tls_key=resolved.tls_key,
             keyring_get=keyring_reader,
             keyring_set=keyring_writer,
+            preview=dry_run,  # a dry run never creates or saves a key
         )
     except ApiKeyError as error:
         if error.code == KEY_REQUIRED_CODE:
             dry = ("--dry-run",) if dry_run else ()
             error.next_step = NextStep(
-                command=again(extra=(*dry, "--generate-api-key")), hint="create a key"
+                command=again(extra=(*dry, "--generate-api-key")),
+                hint="plan it with a new key" if dry_run else "create a key",
             )
         raise
     if security.generated and security.api_key is not None and not settings.json:
@@ -468,7 +470,9 @@ def run_command(
         raise BrasskeyError(f"No adapter for {plan.engine.display_name} in this build.")
 
     if dry_run:
-        return _dry_run(plan, resolved, security, hardware, adapter, folder, save, again())
+        # The key is created when it really starts, so starting keeps --generate-api-key.
+        start = again(extra=("--generate-api-key",) if security.key_pending else ())
+        return _dry_run(plan, resolved, security, hardware, adapter, folder, save, start)
     return _start_and_serve(
         plan, resolved, security, hardware, adapter, install, hub, settings, folder, save
     )
@@ -494,6 +498,8 @@ def _key_data(security: ServeSecurity) -> dict[str, JsonValue]:
         "api_key_source": security.api_key.source if security.api_key else None,
         "tls": security.tls_cert is not None,
         "warnings": list(security.warnings),
+        "new_key_on_start": security.key_pending,  # dry run: created when it really starts
+        "replaced_stored_key": security.replaced_stored_key,
     }
     if security.generated and security.api_key is not None:
         data["generated_api_key"] = security.api_key.value  # the one time it is shown
@@ -587,6 +593,8 @@ def _start_and_serve(
             f"{format_gb(download.disk_free_bytes or 0)} free in {download.cache_dir}.",
             fix="Free some space, or set HF_HOME to a bigger disk.",
         )
+    # Before the prompt and any download: a busy port must not cost a long download first.
+    public_port, port_note = choose_port(security.host, resolved.port)
 
     if not settings.json:
         stderr_console().print(run_summary(plan, security, _engine_warnings(plan, hw)))
@@ -620,7 +628,6 @@ def _start_and_serve(
             on_verify=display.on_verify,
         )
 
-    public_port, port_note = choose_port(security.host, resolved.port)
     engine_port = free_loopback_port()
     engine_key = generate_api_key() if adapter.supports_api_key else None
     if engine_key is not None:

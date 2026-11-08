@@ -89,11 +89,12 @@ def test_keys_are_hidden_from_repr_and_redacted_from_logs(capsys):
 
 
 def decide(host, *, env=None, generate=False, tls_cert=None, tls_key=None, keyring=no_keyring,
-           saved=None):  # fmt: skip
+           saved=None, preview=False):  # fmt: skip
     return decide_security(
         host, api_key_env=None, generate=generate, tls_cert=tls_cert, tls_key=tls_key,
         env=env or {}, keyring_get=keyring,
         keyring_set=(lambda s, u, v: saved.append(v)) if saved is not None else no_save,
+        preview=preview,
     )  # fmt: skip
 
 
@@ -135,6 +136,35 @@ def test_generate_saves_to_the_keyring():
     assert security.api_key is not None
     assert saved == [security.api_key.value]
     assert security.access_label == "API key required (from your keychain)"
+
+
+def test_a_preview_plans_the_key_and_saves_nothing():
+    saved: list[str] = []
+    security = decide("0.0.0.0", generate=True, saved=saved, preview=True)  # noqa: S104
+    assert saved == []  # a dry run leaves the keychain alone
+    assert security.key_pending
+    assert not security.generated  # nothing to show yet
+    assert security.api_key is not None  # checked like the real key: this address is allowed
+    assert security.access_label == "API key required (a new one is created when it starts)"
+
+
+def test_generating_over_a_saved_key_says_so():
+    saved: list[str] = []
+    replacing = decide("0.0.0.0", generate=True, saved=saved, keyring=lambda _s, _u: STRONG)  # noqa: S104
+    assert replacing.replaced_stored_key
+    assert saved != [STRONG]
+    first = decide("0.0.0.0", generate=True, saved=[])  # noqa: S104
+    assert not first.replaced_stored_key
+
+    def refuse(_service: str, _user: str, _value: str) -> None:
+        raise RuntimeError("keychain locked")
+
+    unsaved = decide_security(
+        "0.0.0.0", api_key_env=None, generate=True, tls_cert=None, tls_key=None, env={},  # noqa: S104
+        keyring_get=lambda _s, _u: STRONG, keyring_set=refuse,
+    )  # fmt: skip
+    assert not unsaved.stored_in_keyring
+    assert not unsaved.replaced_stored_key  # the keychain refused the new key: old one kept
 
 
 def test_tls_needs_both_existing_files(tmp_path: Path):

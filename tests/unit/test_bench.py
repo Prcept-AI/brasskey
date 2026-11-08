@@ -120,6 +120,34 @@ def test_margin_and_not_worse():
     assert "no more than 5% worse" in within.reason
 
 
+def test_counted_rates_carry_their_resolution():
+    # Measured on an M3 Pro: every 10 s run finished 13 requests on MLX and 10 on llama.cpp, so
+    # the rates differ only by timing jitter between runs.
+    baseline, candidate = [166.40, 166.41], [128.00, 128.01]
+    naive = compare_runs(baseline, candidate, better="higher")
+    assert not isinstance(naive, str)
+    assert naive.change_high - naive.change_low < 0.001  # the false precision this fixes
+    honest = compare_runs(baseline, candidate, better="higher",
+                          baseline_steps=[1 / 13] * 2, candidate_steps=[1 / 10] * 2)  # fmt: skip
+    assert not isinstance(honest, str)
+    assert honest.verdict == Verdict.FAIL  # 10 vs 13 requests in every run is still clear
+    assert honest.change_low == pytest.approx(-0.3164, abs=1e-3)
+    assert honest.change_high == pytest.approx(-0.1343, abs=1e-3)
+    close = compare_runs([130.0, 130.0], [128.0, 128.0], better="higher",
+                         baseline_steps=[1 / 13] * 2, candidate_steps=[1 / 13] * 2)  # fmt: skip
+    assert not isinstance(close, str)  # resolution known: an interval instead of "too coarse"
+    assert close.verdict == Verdict.INCONCLUSIVE
+    longer = compare_runs([166.4, 166.41, 166.39], [128.0, 128.01, 127.99], better="higher",
+                          baseline_steps=[1 / 130] * 3, candidate_steps=[1 / 100] * 3)  # fmt: skip
+    assert not isinstance(longer, str)
+    assert longer.change_high - longer.change_low < 0.02  # more requests: finer resolution
+    rounded = mean_interval([166.4, 166.4], rel_steps=[1 / 13, 1 / 13])
+    assert rounded.low is not None
+    assert rounded.high is not None
+    assert rounded.low < 166.4 < rounded.high
+    assert rounded.cv == 0.0  # no run-to-run noise to flag
+
+
 def test_cases_without_an_interval_say_why():
     assert "two runs" in str(compare_runs([1.0], [2.0, 2.1], better="higher"))
     assert "zero" in str(compare_runs([1.0, 0.0], [2.0, 2.1], better="higher"))
@@ -443,3 +471,28 @@ def test_summary_and_comparison_decided_by_the_primary_metric():
     ttft = next(item for item in outcome.metrics if item.key == "ttft_ms_p50")
     assert ttft.verdict == Verdict.INCONCLUSIVE  # identical in every run: too coarse
     assert outcome.reason.startswith("Output tokens/s")
+
+
+def test_rates_from_identical_request_counts_get_an_honest_interval():
+    def runs(throughputs, finished):  # type: ignore[no-untyped-def]
+        return tuple(
+            run_metrics(i, value).model_copy(update={"successful": finished})
+            for i, value in enumerate(throughputs)
+        )
+
+    def result(measured):  # type: ignore[no-untyped-def]
+        return EndpointResult(url="u", model="m", runs=measured, metrics=summarize(measured))
+
+    base, cand = result(runs((166.40, 166.41), 13)), result(runs((128.00, 128.01), 10))
+    rate = cand.metric("output_tokens_per_s")
+    assert rate.ci_low is not None
+    assert rate.ci_low < 120  # one request more or less per run, not +-0.01 tok/s
+    outcome = compare(base, cand, goal="better", margin=0.0,
+                      primary="output_tokens_per_s", baseline_source="endpoint")  # fmt: skip
+    throughput = next(item for item in outcome.metrics if item.key == "output_tokens_per_s")
+    assert throughput.change_low is not None
+    assert throughput.change_high is not None
+    assert throughput.change_high - throughput.change_low > 0.1
+    assert outcome.verdict == Verdict.FAIL
+    requests = next(item for item in outcome.metrics if item.key == "requests_per_s")
+    assert requests.verdict == Verdict.FAIL  # same counts, same answer as tokens/s

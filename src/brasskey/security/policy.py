@@ -7,6 +7,7 @@ beyond reading the environment and the keyring through injected functions.
   TLS, Brasskey warns that prompts, answers and the key travel unencrypted.
 """
 
+import logging
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from pathlib import Path
 from brasskey.config.intent import is_loopback
 from brasskey.security.apikeys import (
     DEFAULT_KEY_ENV,
+    KEYRING_SERVICE,
+    KEYRING_USERNAME,
     ApiKey,
     ApiKeyError,
     KeyringGet,
@@ -26,6 +29,8 @@ from brasskey.security.apikeys import (
     resolve_api_key,
     store_api_key,
 )
+
+logger = logging.getLogger(__name__)
 
 KEY_REQUIRED_CODE = "BK-E-API-KEY-REQUIRED"  # a network address without any key
 WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # noqa: S104 - recognised, not bound here
@@ -39,6 +44,8 @@ class ServeSecurity:
     tls_key: Path | None
     generated: bool = False  # --generate-api-key created api_key just now (show it once)
     stored_in_keyring: bool = False
+    key_pending: bool = False  # a dry run with --generate-api-key: created when it starts
+    replaced_stored_key: bool = False  # the new key took the place of one saved earlier
     warnings: tuple[str, ...] = ()
     key_env: str = DEFAULT_KEY_ENV  # the variable a client key is read from on later runs
 
@@ -75,7 +82,9 @@ class ServeSecurity:
         if self.api_key is None:
             return "no API key (this machine only)"
         source = self.api_key.source
-        if source == "keyring":
+        if self.key_pending:
+            where = "a new one is created when it starts"
+        elif source == "keyring":
             where = "from your keychain"
         elif source.startswith("env:"):
             where = f"from {source.removeprefix('env:')}"
@@ -95,8 +104,13 @@ def decide_security(
     keyring_get: KeyringGet = default_keyring_get,
     keyring_set: KeyringSet = default_keyring_set,
     new_key: Callable[[], str] = generate_api_key,
+    preview: bool = False,
 ) -> ServeSecurity:
-    """Check the address, key and TLS settings; raise a plain error when they aren't safe."""
+    """Check the address, key and TLS settings; raise a plain error when they aren't safe.
+
+    ``preview`` (a dry run) changes nothing: with ``generate`` the key is only planned, and is
+    created, shown and saved when the server really starts.
+    """
     source = os.environ if env is None else env
     if (tls_cert is None) != (tls_key is None):
         raise ApiKeyError(
@@ -109,13 +123,21 @@ def decide_security(
             raise ApiKeyError(f"TLS file not found: {path}.", code="BK-E-TLS")
 
     stored = False
-    if generate:
+    replaced = False
+    if generate and preview:
+        # Checked like the real key, but never shown, saved or used: the plan only says one will
+        # be created. Creating it here would change the keychain during a dry run.
+        api_key: ApiKey | None = ApiKey(value=new_key(), source="generated")
+    elif generate:
         value = new_key()
         # An explicitly named variable never falls back to the keychain (resolve_api_key), so a
         # key stored there would be invisible next time: the user exports the variable instead.
         if api_key_env is None:
+            previous = keyring_get(KEYRING_SERVICE, KEYRING_USERNAME)
             stored = store_api_key(value, keyring_set=keyring_set)
-        api_key: ApiKey | None = ApiKey(value=value, source="keyring" if stored else "generated")
+            replaced = stored and previous is not None  # clients with the old key now get 401
+            logger.debug("Generated API key: stored=%s, replaced a saved key=%s", stored, replaced)
+        api_key = ApiKey(value=value, source="keyring" if stored else "generated")
     else:
         api_key = resolve_api_key(api_key_env, env=source, keyring_get=keyring_get)
 
@@ -148,8 +170,10 @@ def decide_security(
         api_key=api_key,
         tls_cert=tls_cert,
         tls_key=tls_key,
-        generated=generate,
+        generated=generate and not preview,
         stored_in_keyring=stored,
+        key_pending=generate and preview,
+        replaced_stored_key=replaced,
         warnings=tuple(warnings),
         key_env=api_key_env or DEFAULT_KEY_ENV,
     )

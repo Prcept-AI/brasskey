@@ -50,13 +50,15 @@ class MetricInfo(_Frozen):
     label: str
     unit: str
     better: Better
+    # A rate of finished requests: one run can't resolve less than one request (1/successful).
+    counted: bool = False
 
 
 METRICS: tuple[MetricInfo, ...] = (
     MetricInfo(key="output_tokens_per_s", option="output-throughput", label="Output tokens/s",
-               unit="tok/s", better="higher"),
+               unit="tok/s", better="higher", counted=True),
     MetricInfo(key="requests_per_s", option="request-throughput", label="Requests/s",
-               unit="req/s", better="higher"),
+               unit="req/s", better="higher", counted=True),
     MetricInfo(key="ttft_ms_p50", option="ttft", label="Time to first token (median)",
                unit="ms", better="lower"),
     MetricInfo(key="itl_ms_p50", option="itl", label="Inter-token latency (median)",

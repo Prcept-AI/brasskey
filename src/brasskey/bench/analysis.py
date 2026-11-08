@@ -22,11 +22,21 @@ def _values(runs: Sequence[RunMetrics], info: MetricInfo) -> tuple[float, ...]:
     return tuple(float(getattr(run, info.key)) for run in runs)
 
 
+def _steps(runs: Sequence[RunMetrics], info: MetricInfo) -> tuple[float, ...] | None:
+    """Each run's relative resolution for rates of finished requests (one request = 1/n).
+
+    Without it, two runs that both finished 13 requests would claim an interval of zero width.
+    """
+    if not info.counted:
+        return None
+    return tuple(1.0 / max(run.successful, 1) for run in runs)
+
+
 def summarize(runs: Sequence[RunMetrics]) -> tuple[MetricSummary, ...]:
     summaries: list[MetricSummary] = []
     for info in METRICS:
         values = _values(runs, info)
-        interval = mean_interval(values)
+        interval = mean_interval(values, rel_steps=_steps(runs, info))
         summaries.append(
             MetricSummary(
                 key=info.key,
@@ -62,6 +72,8 @@ def compare(
             better=info.better,
             goal=goal,
             margin=margin,
+            baseline_steps=_steps(baseline.runs, info),
+            candidate_steps=_steps(candidate.runs, info),
         )
         if isinstance(result, LogComparison):
             compared.append(

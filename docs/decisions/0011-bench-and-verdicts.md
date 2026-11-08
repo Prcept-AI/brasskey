@@ -67,9 +67,14 @@ prompt or response text.
   - comparisons: Welch's t interval on log values. Improvement Δ is oriented so that positive
     means better. The target t is ln(1 + margin) for `--goal better` and ln(1 − margin) for
     `--goal not-worse`. Then PASS if lo ≥ t, FAIL if hi < t, otherwise INCONCLUSIVE.
-  - Fewer than two runs, a zero value, or identical values in every run (a coarse measurement
-    such as a request count over a short run) give INCONCLUSIVE with the reason, never a
-    zero-width interval.
+  - Throughputs are rates of finished requests, so one run can't resolve less than one
+    request: a relative step of 1/successful. Its variance (step² / 12, a uniform rounding error)
+    is added to the run-to-run variance in every interval and comparison. Without it, runs that
+    finished the same number of requests differ only by timing jitter and claim false precision
+    (measured: 13 vs 10 requests per 10 s run gave "−23.1% (−23.1% to −23.1%)"; with it,
+    −31.6% to −13.4%, still FAIL).
+  - Fewer than two runs, a zero value, or identical values in every run with no known resolution
+    (the latency metrics) give INCONCLUSIVE with the reason, never a zero-width interval.
   - The primary metric (`--metric`, default output throughput) decides the verdict. The other
     metrics are compared and shown for information.
   - Exit codes are 0 for PASS (or no comparison), 3 for FAIL and 4 for INCONCLUSIVE (ADR 0001).
@@ -88,8 +93,8 @@ prompt or response text.
 - uv labels `--torch-backend` experimental. If a uv release changes it, the GuideLLM setup fails
   with uv's message, and the fallback is `uv tool install guidellm==0.8.1` (GuideLLM on PATH).
 - A run costs about 10 s of GuideLLM overhead beyond its duration, which is part of the estimate.
-- Short runs give coarse request counts. The defaults (30 s × 3) and the INCONCLUSIVE rule keep
-  that honest.
+- Short runs give coarse request counts. The defaults (30 s × 3), the resolution term and the
+  INCONCLUSIVE rule keep that honest: longer runs narrow the interval.
 - Measured on the M3 Pro, Qwen3 0.6B, 2 concurrent, 3 × 8 s: MLX 4-bit gave +33% output
   throughput over llama.cpp Q8_0 (95% interval +17% to +51%): PASS. The quantizations differ, so
   this compares setups, not engines alone.

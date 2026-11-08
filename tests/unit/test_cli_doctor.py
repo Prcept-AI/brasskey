@@ -2,6 +2,7 @@
 """``brasskey doctor`` with fake hardware: human view, --json and issues."""
 
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,6 +12,7 @@ from brasskey.hardware.apple import AppleSiliconProbe
 from brasskey.hardware.cpu import CpuProbe
 from brasskey.hardware.nvidia import NvmlProbe
 from brasskey.hardware.types import GIB, OsInfo
+from brasskey.runtime.state import ServerRecord
 from fakes.commands import FakeRunner, load_sysctl, load_text, write_tree
 from fakes.nvml import H100_SXM, FakeNvml, fleet
 from fakes.system import FakeStats
@@ -74,7 +76,7 @@ def test_doctor_shows_the_mac(cli, use_report):
     assert "150 GB/s peak bandwidth" in out
     assert "Fingerprint: sha256:" in out
     assert "llama.cpp (not installed: brew install llama.cpp)" in out
-    assert "vLLM: not for this machine (vLLM runs on Linux (or WSL2) with an NVIDIA GPU.)" in out
+    assert "vLLM: not for this machine. vLLM runs on Linux (or WSL2) with an NVIDIA GPU." in out
     # The engine `brasskey run` would pick here first: MLX, which uv sets up.
     assert result.last_line() == "Next: brew install uv (install an engine)"
 
@@ -88,6 +90,20 @@ def test_doctor_shows_gpu_issues_with_fixes(cli, use_report, tmp_path):
     assert "Things to know" in result.stdout
     assert "in use by other processes" in result.stdout
     assert "Fix: Stop the other GPU processes" in result.stdout
+
+
+def test_doctor_lists_running_servers_by_engine_name(cli, use_report, monkeypatch):
+    use_report(m3_pro_report())
+    record = ServerRecord(
+        id="srv", pid=4242, process_started_at=1.0, engine="llamacpp", engine_version="1",
+        model_id="qwen3-0.6b", host="127.0.0.1", port=8000, engine_port=40000, tls=False,
+        base_url="http://127.0.0.1:8000/v1", auth="none",
+        started_at=datetime(2026, 11, 8, 15, 13, tzinfo=UTC), log_path="server.log",
+        brasskey_version="0",
+    )  # fmt: skip
+    monkeypatch.setattr("brasskey.cli.doctor.list_records", lambda _paths: [record])
+    out = cli("doctor").stdout
+    assert "qwen3-0.6b at http://127.0.0.1:8000/v1 (llama.cpp, pid 4242, since 2026-11-08" in out
 
 
 def test_doctor_json(cli, use_report):

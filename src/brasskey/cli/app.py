@@ -28,12 +28,13 @@ from brasskey.cli.bench import bench_command
 from brasskey.cli.doctor import doctor_command
 from brasskey.cli.options import DebugFlag, JsonFlag, YesFlag, apply_flags
 from brasskey.cli.run import run_command
-from brasskey.errors import ISSUES_URL, BrasskeyError, ExitCode
+from brasskey.errors import ISSUES_URL, BrasskeyError, ConfirmationRequiredError, ExitCode
 from brasskey.log import configure_logging
 from brasskey.output.next_step import SEE_COMMANDS, NextStep
 from brasskey.output.render import emit_brasskey_error, emit_error, emit_result, emit_traceback
 from brasskey.output.result import CommandResult
 from brasskey.output.settings import OutputSettings, use_settings
+from brasskey.runtime.ports import PortInUseError
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,27 @@ def _internal_error(error: Exception, args: Sequence[str], settings: OutputSetti
     return int(ExitCode.ERROR)
 
 
+def _with_option(args: Sequence[str], name: str, value: str) -> list[str]:
+    """``args`` with option ``name`` set to ``value``: replaced where given (``--x v`` or
+    ``--x=v``), otherwise added (an option on the command line overrides brasskey.yaml)."""
+    result: list[str] = []
+    replaced = False
+    skip_value = False
+    for arg in args:
+        if skip_value:
+            skip_value = False
+            continue
+        if arg == name:
+            result += [name, value]
+            replaced = skip_value = True
+        elif arg.startswith(f"{name}="):
+            result += [name, value]
+            replaced = True
+        else:
+            result.append(arg)
+    return result if replaced else [*result, name, value]
+
+
 def _invoke(args: list[str], settings: OutputSettings) -> int:
     """Run the Click command and turn every outcome into rendered output and an exit code."""
     command = typer.main.get_command(app)
@@ -182,6 +204,22 @@ def _invoke(args: list[str], settings: OutputSettings) -> int:
         return _interrupted(settings)
     except BrasskeyError as error:
         logger.debug("BrasskeyError %s in command %s", error.code, settings.command)
+        # Repeat exactly what was typed, adjusted to get past the error. Safe to echo: Brasskey
+        # never takes secrets on the command line (keys come from env or the keyring).
+        if isinstance(error, ConfirmationRequiredError) and error.next_step == SEE_COMMANDS:
+            error.next_step = NextStep(
+                command=shlex.join(["brasskey", *args, "--yes"]), hint="continue without a prompt"
+            )
+        if (
+            isinstance(error, PortInUseError)
+            and error.free_port is not None
+            and error.next_step == SEE_COMMANDS
+        ):
+            port = str(error.free_port)
+            error.next_step = NextStep(
+                command=shlex.join(["brasskey", *_with_option(args, "--port", port)]),
+                hint=f"use port {port}, which is free",
+            )
         emit_brasskey_error(error, settings)
         return int(error.exit_code)
     except Exception as error:  # last-resort boundary: never show a raw traceback by default

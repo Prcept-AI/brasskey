@@ -190,8 +190,12 @@ def test_busy_port_is_detected_and_a_requested_one_is_never_changed():
         listener.listen()
         busy = listener.getsockname()[1]
         assert not port_is_free("127.0.0.1", busy)
-        with pytest.raises(PortInUseError):
+        with pytest.raises(PortInUseError) as caught:
             choose_port("127.0.0.1", busy)
+        free = caught.value.free_port  # offered for the next step, never used silently
+        assert free is not None
+        assert free != busy
+        assert f"({free} is free)" in (caught.value.fix or "")
 
 
 def test_default_port_moves_on_when_8000_is_busy(monkeypatch):

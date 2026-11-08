@@ -123,15 +123,41 @@ class Interval:
     cv: float | None  # standard deviation / mean
 
 
-def mean_interval(values: Sequence[float], confidence: float = CONFIDENCE) -> Interval:
-    """Mean with a two-sided Student-t interval and the coefficient of variation."""
+def resolution_variance(rel_steps: Sequence[float] | None) -> float:
+    """Variance a run adds by rounding to its resolution: a uniform error over one step.
+
+    ``rel_steps`` are relative steps per run, e.g. 1/13 for a rate counted from 13 finished
+    requests (one request more or less moves it by 1/13). A uniform error over a step ``q`` has
+    variance q**2 / 12. Being relative, the result is a log-scale variance; multiply by the
+    squared mean for the variance of the values themselves.
+    """
+    if not rel_steps:
+        return 0.0
+    return math.fsum(step**2 for step in rel_steps) / (12 * len(rel_steps))
+
+
+def mean_interval(
+    values: Sequence[float],
+    confidence: float = CONFIDENCE,
+    *,
+    rel_steps: Sequence[float] | None = None,
+) -> Interval:
+    """Mean with a two-sided Student-t interval and the coefficient of variation.
+
+    With ``rel_steps`` (the measurement's resolution per run) the interval also covers that
+    resolution, so runs that happen to round to the same value don't claim zero uncertainty.
+    The CV stays the run-to-run spread: it flags noise, not resolution.
+    """
     if not values:
         raise ValueError("no values")
     center = _mean(values)
     if len(values) < 2:
         return Interval(center, None, None, None)
-    spread = math.sqrt(_variance(values))
-    half = t_quantile(0.5 + confidence / 2.0, len(values) - 1) * spread / math.sqrt(len(values))
+    sample_variance = _variance(values)
+    variance = sample_variance + resolution_variance(rel_steps) * center**2
+    t = t_quantile(0.5 + confidence / 2.0, len(values) - 1)
+    half = t * math.sqrt(variance) / math.sqrt(len(values))
+    spread = math.sqrt(sample_variance)
     cv = spread / center if center > 0 else None
     return Interval(center, center - half, center + half, cv)
 
@@ -165,15 +191,23 @@ def compare_runs(
     goal: Goal = "better",
     margin: float = 0.0,
     confidence: float = CONFIDENCE,
+    baseline_steps: Sequence[float] | None = None,
+    candidate_steps: Sequence[float] | None = None,
 ) -> LogComparison | str:
-    """Welch's t interval on log values, and the verdict. Returns a reason when it can't."""
+    """Welch's t interval on log values, and the verdict. Returns a reason when it can't.
+
+    ``baseline_steps`` / ``candidate_steps``: each run's relative resolution (see
+    ``resolution_variance``), added to the run-to-run variance. Without them, runs that all gave
+    the same value can't have an honest interval.
+    """
     if not 0.0 <= margin < 1.0:
         raise ValueError("margin must be at least 0 and below 1")
     if len(baseline) < 2 or len(candidate) < 2:
         return "At least two runs per endpoint are needed for an interval."
     if any(value <= 0 for value in (*baseline, *candidate)):
         return "A run measured zero, so ratios can't be computed (see the errors above)."
-    if min(baseline) == max(baseline) and min(candidate) == max(candidate):
+    known_resolution = baseline_steps is not None or candidate_steps is not None
+    if not known_resolution and min(baseline) == max(baseline) and min(candidate) == max(candidate):
         # Every run gave the same value (e.g. a request count over a short run): the precision
         # is limited by that granularity, which an interval of zero width would hide.
         return (
@@ -183,8 +217,9 @@ def compare_runs(
     log_base = [math.log(value) for value in baseline]
     log_cand = [math.log(value) for value in candidate]
     raw = _mean(log_cand) - _mean(log_base)
-    var_base = _variance(log_base) / len(log_base)
-    var_cand = _variance(log_cand) / len(log_cand)
+    # Per-run log variance: run-to-run spread plus the measurement's resolution.
+    var_base = (_variance(log_base) + resolution_variance(baseline_steps)) / len(log_base)
+    var_cand = (_variance(log_cand) + resolution_variance(candidate_steps)) / len(log_cand)
     se = math.sqrt(var_base + var_cand)
     denominator = var_base**2 / (len(log_base) - 1) + var_cand**2 / (len(log_cand) - 1)
     df = (var_base + var_cand) ** 2 / denominator if denominator > 0 else math.inf

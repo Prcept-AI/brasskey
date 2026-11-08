@@ -242,20 +242,57 @@ def test_parse_docker_ps():
     assert found == [("0.0.0.0", 8000), ("::", 8000)]  # noqa: S104
 
 
-def test_prober_sends_a_foreign_origin_and_reads_cors():
-    seen = {}
+def probe_with(handler, url="http://x/v1/models"):
+    return make_prober(httpx2.Client(transport=httpx2.MockTransport(handler)))(url)
+
+
+def test_prober_asks_like_a_script_then_like_a_foreign_web_page():
+    seen: list[str | None] = []
 
     def handler(request):
-        seen["origin"] = request.headers.get("origin")
+        seen.append(request.headers.get("origin"))
         return httpx2.Response(200, json={"data": []}, headers={"access-control-allow-origin": "*"})
 
-    probe = make_prober(httpx2.Client(transport=httpx2.MockTransport(handler)))(
-        "http://x/v1/models"
-    )
-    assert seen["origin"] == PROBE_ORIGIN
+    probe = probe_with(handler)
+    assert seen == [None, PROBE_ORIGIN]
     assert probe is not None
     assert probe.open_without_key
     assert probe.readable_by_any_site
+
+
+def refuses_web_pages_but_needs_no_key(request):
+    """Like Ollama (OLLAMA_ORIGINS) or Brasskey's proxy without a key: 403 only for an Origin."""
+    if request.headers.get("origin"):
+        return httpx2.Response(403)
+    return httpx2.Response(200, json={"models": []})
+
+
+def test_refusing_web_pages_is_not_mistaken_for_needing_a_key():
+    probe = probe_with(refuses_web_pages_but_needs_no_key, "http://x/api/tags")
+    assert probe is not None
+    assert probe.open_without_key  # every script and other machine still gets answers
+    assert not probe.readable_by_any_site
+    exposed = run_checks(
+        context(listeners=[Listener("*", 11434, 501, "ollama")], probe=lambda _url: probe)
+    )
+    assert statuses(exposed, "BK-SEC-002") == [CheckStatus.FAIL]  # was a false PASS
+    by_url = check_url("https://gpu-box/v1", lambda _url: probe)
+    assert statuses(by_url, "BK-SEC-002") == [CheckStatus.FAIL]
+    assert statuses(by_url, "BK-SEC-003") == []  # web pages are refused: nothing to warn
+
+
+def test_a_server_that_needs_a_key_is_asked_once():
+    seen: list[str | None] = []
+
+    def handler(request):
+        seen.append(request.headers.get("origin"))
+        return httpx2.Response(401)
+
+    probe = probe_with(handler)
+    assert seen == [None]
+    assert probe is not None
+    assert not probe.open_without_key
+    assert not probe.readable_by_any_site
 
 
 # --- the command ---------------------------------------------------------------------------------
