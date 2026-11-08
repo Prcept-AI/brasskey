@@ -36,7 +36,7 @@ python3 scripts/check_dist.py dist              # what a release would publish
 sh scripts/check_secrets.sh                     # credentials: working tree and all history
 ```
 
-CI runs all of these on Linux and macOS (Apple Silicon) with Python 3.11 to 3.14. Releases are
+CI runs all of these on Linux and macOS (Apple Silicon) with Python 3.11 to 3.15. Releases are
 published by CI only; see [RELEASING.md](RELEASING.md).
 
 ## Rules every change follows

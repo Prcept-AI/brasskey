@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Continuous integration: lint, types, license policy, tests (macOS arm64 + Linux, Python
-# 3.11-3.14), a packaging check (reproducible build, metadata, clean install), a container image
+# 3.11-3.15), a packaging check (reproducible build, metadata, clean install), a container image
 # smoke test and a supply-chain audit.
 #
 # Supply-chain rules (CONTRIBUTING.md):
@@ -64,7 +64,7 @@ jobs:
       matrix:
         # macos-15 runners are Apple Silicon, so the Apple probe runs on real hardware there.
         os: [ubuntu-24.04, macos-15]
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

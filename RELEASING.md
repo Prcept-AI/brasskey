@@ -54,7 +54,25 @@ uv venv /tmp/try && uv pip install --python /tmp/try/bin/python \
    - installs the wheel into a clean environment and runs it;
    - publishes to PyPI with Sigstore-signed attestations;
    - records build provenance and creates the GitHub release with the wheel, sdist,
-     `SHA256SUMS` and an SPDX SBOM. Alpha, beta, rc and dev versions are marked pre-release.
+     `SHA256SUMS` and an SPDX SBOM. Alpha, beta, rc and dev versions are marked pre-release;
+   - pushes the container image `ghcr.io/prcept-ai/brasskey:<version>` (linux/amd64 and
+     linux/arm64, BuildKit provenance; `latest` only for final versions). The first time, set
+     the package's visibility to public in the organization's package settings.
+
+4. Update the Homebrew tap ([ADR 0015](docs/decisions/0015-homebrew-tap.md)) once the version is
+   on PyPI:
+
+   ```bash
+   git clone https://github.com/Prcept-AI/homebrew-tap.git && cd homebrew-tap
+   git switch -c brasskey-<version>
+   uv run --project ../brasskey python ../brasskey/scripts/homebrew_formula.py <version> \
+     > Formula/brasskey.rb
+   git commit -am "brasskey <version>" && git push -u origin brasskey-<version>
+   gh pr create --fill
+   ```
+
+   When the pull request's test-bot checks are green (bottles for macOS and Linux), run the tap's
+   "brew pr-pull" workflow with the pull request number: it publishes the bottles and merges.
 
 A failed run publishes nothing that a rerun can't finish; PyPI rejects re-uploading an existing
 version, so fix forward with the next version number.

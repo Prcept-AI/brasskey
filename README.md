@@ -45,12 +45,20 @@ Next: testing vLLM and SGLang on NVIDIA GPUs, then 0.1.0. Design decisions are r
 Python 3.11 or newer, on macOS or Linux (Windows through WSL2):
 
 ```bash
+brew install prcept-ai/tap/brasskey   # macOS and Linux, prebuilt
 uv tool install brasskey       # or: pip install brasskey
 # or, without uv: the installer sets up uv (checksum-verified) and then Brasskey
 curl -LsSf https://raw.githubusercontent.com/Prcept-AI/brasskey/main/scripts/install.sh | sh
 
 brasskey doctor                # what Brasskey sees on this machine
 brasskey run --dry-run         # the model it would pick for this machine, and why
+```
+
+Or run it in a container (from the next release; linux/amd64 and linux/arm64), for example to
+check or benchmark a server:
+
+```bash
+docker run --rm ghcr.io/prcept-ai/brasskey:<version> doctor --security https://gpu-box.example/v1
 ```
 
 `brasskey run` starts an engine you have installed, for example `brew install llama.cpp`; on
