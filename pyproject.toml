@@ -1,8 +1,7 @@
 [project]
 name = "brasskey"
-dynamic = ["version"]
+dynamic = ["version", "readme"]  # readme: hatch_build.py (absolute links for PyPI)
 description = "The key to every engine: deploy, tune, verify and serve open models on any hardware."
-readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
@@ -79,6 +78,9 @@ python-preference = "only-managed"
 [tool.hatch.version]
 path = "src/brasskey/__init__.py"
 
+[tool.hatch.metadata.hooks.custom]
+# hatch_build.py: the package description is README.md with links made absolute for PyPI.
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/brasskey"]
 
@@ -94,6 +96,7 @@ include = [
   "SECURITY.md",
   "CONTRIBUTING.md",
   "pyproject.toml",
+  "hatch_build.py",
 ]
 
 # ---------------------------------------------------------------------------------------------

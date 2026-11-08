@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Continuous integration: lint, types, license policy, tests (macOS arm64 + Linux, Python
-# 3.11-3.14) and a supply-chain audit.
+# 3.11-3.14), a packaging check (reproducible build, metadata, clean install) and a supply-chain
+# audit.
 #
 # Supply-chain rules (CONTRIBUTING.md):
 # - every action is pinned by full commit SHA (tag in the trailing comment; Dependabot bumps both);
@@ -76,6 +77,39 @@ jobs:
         run: uv sync --locked
       - name: Pytest (GPU, engine and network tests are opt-in and skipped here)
         run: uv run --locked pytest
+
+  package:
+    name: Package (reproducible build, metadata, clean install)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Build twice from the same commit and compare (reproducible builds)
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          for out in dist dist-again; do
+            uv build --build-constraints scripts/build-constraints.txt --require-hashes \
+              --no-create-gitignore --out-dir "$out"
+          done
+          (cd dist && sha256sum -- *) > "$RUNNER_TEMP/first.sha256"
+          (cd dist-again && sha256sum -- *) > "$RUNNER_TEMP/second.sha256"
+          diff "$RUNNER_TEMP/first.sha256" "$RUNNER_TEMP/second.sha256"
+      - name: Check the wheel and sdist (scripts/check_dist.py)
+        run: python3 scripts/check_dist.py dist
+      - name: Install the wheel into a clean environment and run it
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/clean"
+          uv pip install --python "$RUNNER_TEMP/clean/bin/python" dist/*.whl
+          "$RUNNER_TEMP/clean/bin/brasskey" --version
+          "$RUNNER_TEMP/clean/bin/brasskey" doctor --json > /dev/null
 
   audit:
     name: Supply-chain audit

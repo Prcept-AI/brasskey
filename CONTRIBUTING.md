@@ -31,9 +31,12 @@ uv run pytest -m engine                         # real engine + small model down
 uv run ruff check . && uv run ruff format --check .
 uv run pyright                                  # strict for src/ and scripts/
 uv run python scripts/check_licenses.py         # dependency license policy
+uv build --build-constraints scripts/build-constraints.txt --require-hashes --no-create-gitignore
+python3 scripts/check_dist.py dist              # what a release would publish
 ```
 
-CI runs all of these on Linux and macOS (Apple Silicon) with Python 3.11 to 3.14.
+CI runs all of these on Linux and macOS (Apple Silicon) with Python 3.11 to 3.14. Releases are
+published by CI only; see [RELEASING.md](RELEASING.md).
 
 ## Rules every change follows
 

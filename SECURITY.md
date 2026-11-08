@@ -72,5 +72,29 @@ Implemented in v0.1 ([ADR 0009](docs/decisions/0009-security-defaults-proxy-and-
 - **No prompt logging.** Prompt and response content is never logged or stored by default; the
   proxy keeps no access log. `brasskey bench` keeps numbers only: GuideLLM is told to keep no
   request text, and its raw reports are deleted after parsing.
-- **Releases.** Releases will be published through PyPI trusted publishing, signed (Sigstore),
-  with SBOMs and checksums. CI pins every action by commit SHA and every tool by exact version.
+- **Releases.** Releases are published from GitHub Actions through PyPI trusted publishing (no
+  tokens), built reproducibly, signed with Sigstore, and shipped with an SBOM and checksums. CI
+  pins every action by commit SHA and every tool by exact version (the build backend by hash).
+
+## Verifying a release
+
+Each release on GitHub carries the wheel, the sdist, `SHA256SUMS` and an SPDX SBOM
+(`brasskey-<version>.spdx.json`, the locked runtime dependencies with their licenses).
+
+```bash
+# 1. Checksums of the files you downloaded
+sha256sum --check --ignore-missing SHA256SUMS
+# macOS: shasum -a 256 --check --ignore-missing SHA256SUMS
+
+# 2. GitHub build provenance: built by this repository's release workflow
+gh attestation verify brasskey-<version>-py3-none-any.whl --repo Prcept-AI/brasskey
+
+# 3. Rebuild it yourself: builds are reproducible, so the hash matches
+git checkout v<version>
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" uv build \
+  --build-constraints scripts/build-constraints.txt --require-hashes --no-create-gitignore
+sha256sum dist/*
+```
+
+PyPI also shows the Sigstore-signed attestations (PEP 740) for each file on the release's
+"Download files" page.

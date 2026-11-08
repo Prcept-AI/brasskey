@@ -1,0 +1,202 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Release: build once, check, sign and publish (RELEASING.md, ADR 0012).
+#
+# - Pushing a tag v<version> publishes to PyPI and creates the GitHub release. Running the workflow
+#   by hand (Actions > Release > Run workflow) publishes to TestPyPI instead: a rehearsal.
+# - The wheel and sdist are built once, reproducibly (SOURCE_DATE_EPOCH = the commit time, build
+#   backend pinned by hash), checked by scripts/check_dist.py (including tag == version),
+#   installed into a clean environment and run.
+# - PyPI trusted publishing (OIDC): no API tokens exist anywhere. Publishing jobs run in the
+#   `pypi` / `testpypi` environments, which can require a reviewer; pypa/gh-action-pypi-publish
+#   signs PEP 740 attestations with Sigstore.
+# - The GitHub release carries the wheel, sdist, SHA256SUMS and an SPDX SBOM (Syft, pinned), and
+#   GitHub build provenance (Sigstore-signed) is recorded for the wheel and sdist.
+# - Supply chain (CONTRIBUTING.md): actions pinned by commit SHA, no caches (no cache poisoning),
+#   least-privilege token per job, no credentials persisted by checkout.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.13.6"
+  SYFT_VERSION: "v1.55.0"
+  NO_COLOR: "1"
+
+jobs:
+  build:
+    name: Build, check and describe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Build twice from the same commit and compare (reproducible builds)
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          for out in dist dist-again; do
+            uv build --build-constraints scripts/build-constraints.txt --require-hashes \
+              --no-create-gitignore --out-dir "$out"
+          done
+          (cd dist && sha256sum -- *) > "$RUNNER_TEMP/first.sha256"
+          (cd dist-again && sha256sum -- *) > "$RUNNER_TEMP/second.sha256"
+          diff "$RUNNER_TEMP/first.sha256" "$RUNNER_TEMP/second.sha256"
+      - name: Check the wheel and sdist, and that the tag matches the version
+        id: check
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            python3 scripts/check_dist.py dist --version "${REF_NAME#v}"
+          else
+            python3 scripts/check_dist.py dist
+          fi
+          wheel="$(basename dist/*.whl)"
+          echo "version=$(echo "$wheel" | cut -d- -f2)" >> "$GITHUB_OUTPUT"
+      - name: Install the wheel into a clean environment and run it
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/clean"
+          uv pip install --python "$RUNNER_TEMP/clean/bin/python" dist/*.whl
+          "$RUNNER_TEMP/clean/bin/brasskey" --version
+          "$RUNNER_TEMP/clean/bin/brasskey" doctor --json > /dev/null
+      - name: Environment for the SBOM (locked runtime dependencies and the wheel)
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements.txt \
+            --output-file "$RUNNER_TEMP/requirements.txt"
+          uv venv --python 3.12 "$RUNNER_TEMP/sbom-env"
+          uv pip install --python "$RUNNER_TEMP/sbom-env/bin/python" --no-deps --require-hashes \
+            --requirement "$RUNNER_TEMP/requirements.txt"
+          uv pip install --python "$RUNNER_TEMP/sbom-env/bin/python" --no-deps dist/*.whl
+          mkdir -p release
+      - name: SBOM (SPDX, Syft)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: ${{ runner.temp }}/sbom-env
+          format: spdx-json
+          output-file: release/brasskey-${{ steps.check.outputs.version }}.spdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Checksums
+        run: (cd dist && sha256sum -- *.whl *.tar.gz) > release/SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: release/
+          if-no-files-found: error
+
+  provenance:
+    name: Build provenance (Sigstore)
+    needs: build
+    # Artifact attestations need a public repository (or GitHub Enterprise Cloud).
+    if: github.ref_type == 'tag' && github.event.repository.visibility == 'public'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # sign the provenance with a short-lived Sigstore certificate
+      attestations: write # store the attestation with the repository
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+  publish-testpypi:
+    name: Publish to TestPyPI (rehearsal)
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/brasskey
+    permissions:
+      id-token: write # trusted publishing: OIDC token instead of an API token
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/brasskey
+    permissions:
+      id-token: write # trusted publishing: OIDC token instead of an API token
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/
+
+  github-release:
+    name: GitHub release
+    needs: [build, publish-pypi]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the GitHub release and upload its files
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: release/
+      - name: Create the release (pre-release for alpha, beta, rc and dev versions)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          prerelease=()
+          case "$VERSION" in *a*|*b*|*rc*|*dev*) prerelease=(--prerelease) ;; esac
+          gh release create "$TAG" dist/* release/* --repo "$REPO" --verify-tag \
+            --title "Brasskey $VERSION" --generate-notes "${prerelease[@]}"
