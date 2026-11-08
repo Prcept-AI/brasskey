@@ -82,7 +82,9 @@ Record notable decisions as short ADRs in `docs/decisions/NNNN-title.md` using t
 ## Pull requests
 
 Keep pull requests small and focused, fill in the template checklist, and make sure CI is green.
-Write commit messages in the imperative mood ("Add hardware probe for Apple Silicon").
+Write commit messages in the imperative mood ("Add hardware probe for Apple Silicon"). Note
+user-visible changes under "Unreleased" in [CHANGELOG.md](CHANGELOG.md); each release turns
+that section into its notes.
 
 ## Contributor License Agreement
 

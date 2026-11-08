@@ -79,6 +79,13 @@ jobs:
           fi
           wheel="$(basename dist/*.whl)"
           echo "version=$(echo "$wheel" | cut -d- -f2)" >> "$GITHUB_OUTPUT"
+      - name: Release notes from CHANGELOG.md (a tag without its section fails here)
+        if: github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          mkdir -p notes
+          python3 scripts/release_notes.py "$VERSION" > notes/release-notes.md
       - name: Install the wheel into a clean environment and run it
         run: |
           uv venv --python 3.12 "$RUNNER_TEMP/clean"
@@ -114,6 +121,12 @@ jobs:
         with:
           name: release-files
           path: release/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.ref_type == 'tag'
+        with:
+          name: release-notes
+          path: notes/
           if-no-files-found: error
 
   provenance:
@@ -194,6 +207,10 @@ jobs:
         with:
           name: release-files
           path: release/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes/
       - name: Create the release (pre-release for alpha, beta, rc and dev versions)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -203,8 +220,10 @@ jobs:
         run: |
           prerelease=()
           case "$VERSION" in *a*|*b*|*rc*|*dev*) prerelease=(--prerelease) ;; esac
+          # The CHANGELOG.md section first, then GitHub's generated list and compare link.
           gh release create "$TAG" dist/* release/* --repo "$REPO" --verify-tag \
-            --title "Brasskey $VERSION" --generate-notes "${prerelease[@]}"
+            --title "Brasskey $VERSION" --notes-file notes/release-notes.md --generate-notes \
+            "${prerelease[@]}"
 
   container:
     name: Container image (ghcr.io)

@@ -39,9 +39,11 @@ uv venv /tmp/try && uv pip install --python /tmp/try/bin/python \
 ## Release
 
 1. Set the version in `src/brasskey/__init__.py` (PEP 440: `0.1.0a1`, `0.1.0b1`, `0.1.0rc1`,
-   `0.1.0`), update the README's install instructions if they changed, run
-   `sh scripts/check_secrets.sh` (it must report no credentials), and merge to `main` with CI
-   green.
+   `0.1.0`). In `CHANGELOG.md`, move the Unreleased entries under `## [<version>] - <date>` and
+   update the links at the bottom: that section becomes the GitHub release notes, and the
+   release fails without it (`python3 scripts/release_notes.py <version>` shows it). Update the
+   README's install instructions if they changed, run `sh scripts/check_secrets.sh` (it must
+   report no credentials), and merge to `main` with CI green.
 2. Tag the merge commit and push the tag:
 
    ```bash

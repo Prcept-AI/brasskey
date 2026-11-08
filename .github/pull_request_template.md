@@ -17,3 +17,4 @@
 - [ ] Commands keep the CLI contract: `--json`, plain errors with a fix, a `Next:` line
 - [ ] No prompt content, API keys or tokens are logged or stored
 - [ ] Notable decisions recorded as an ADR in `docs/decisions/`
+- [ ] User-visible changes noted under "Unreleased" in `CHANGELOG.md`

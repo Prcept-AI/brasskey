@@ -46,6 +46,7 @@ Homepage = "https://github.com/Prcept-AI/brasskey"
 Repository = "https://github.com/Prcept-AI/brasskey"
 Issues = "https://github.com/Prcept-AI/brasskey/issues"
 Security = "https://github.com/Prcept-AI/brasskey/blob/main/SECURITY.md"
+Changelog = "https://github.com/Prcept-AI/brasskey/blob/main/CHANGELOG.md"
 
 [project.scripts]
 brasskey = "brasskey.cli.app:main"

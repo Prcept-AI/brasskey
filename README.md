@@ -22,23 +22,28 @@ brasskey deploy     # ship it tuned, verified and secure (coming soon)
 
 ## Status
 
-Pre-alpha. The current release is 0.1.0a2, on the way to v0.1 "It runs": `brasskey run`,
-`brasskey bench` and `brasskey doctor --security` on NVIDIA GPUs, Apple Silicon and CPUs, with
-llama.cpp, MLX, vLLM and SGLang. Done so far:
+Pre-alpha. The current release is 0.1.0a2, on the way to v0.1 "It runs" (changes:
+[CHANGELOG.md](CHANGELOG.md)). All three v0.1 commands work:
 
-- `brasskey doctor`: hardware, engines and running servers.
-- Planning with `brasskey run --dry-run`.
-- `brasskey run` with llama.cpp, MLX (Apple Silicon), vLLM or SGLang (NVIDIA on Linux, as a
-  process or from the official image pinned by digest). It downloads and verifies the model,
-  then serves it on 127.0.0.1 through a Brasskey proxy that enforces API keys. Ctrl-C stops it
-  cleanly. llama.cpp and MLX are tested on real hardware; vLLM and SGLang are not yet tested on
-  real GPUs.
-- `brasskey doctor --security`: checks this machine, or a URL, for exposed model servers.
-- `brasskey bench`: repeated GuideLLM runs, 95% intervals on every metric, and PASS / FAIL /
-  INCONCLUSIVE when comparing two setups.
+- `brasskey run` plans a model that fits this machine (`--dry-run` shows the plan and why),
+  downloads and verifies it, then serves it on 127.0.0.1 through a Brasskey proxy that enforces
+  API keys. Ctrl-C stops it cleanly.
+- `brasskey bench` repeats GuideLLM runs, reports 95% intervals on every metric, and gives
+  PASS / FAIL / INCONCLUSIVE when comparing two setups.
+- `brasskey doctor` shows hardware, engines and running servers; `--security` checks this
+  machine, or a URL, for exposed model servers.
 
-Next: testing vLLM and SGLang on NVIDIA GPUs, then 0.1.0. Design decisions are recorded in
-[docs/decisions](docs/decisions/).
+Where each engine runs, and how far it is tested:
+
+| Engine | Apple Silicon | NVIDIA GPUs (Linux, WSL2) | CPUs |
+| --- | --- | --- | --- |
+| llama.cpp | tested on real hardware | built; real-GPU test next | tested with simulated hardware |
+| MLX | tested on real hardware | – | – |
+| vLLM | – | built; real-GPU test next | – |
+| SGLang | – | built; real-GPU test next | – |
+
+vLLM and SGLang run as a process or from the official image, pinned by digest. Next: testing on
+NVIDIA GPUs, then 0.1.0. Design decisions are recorded in [docs/decisions](docs/decisions/).
 
 ## Install
 
