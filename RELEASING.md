@@ -73,6 +73,9 @@ uv venv /tmp/try && uv pip install --python /tmp/try/bin/python \
 
    When the pull request's test-bot checks are green (bottles for macOS and Linux), run the tap's
    "brew pr-pull" workflow with the pull request number: it publishes the bottles and merges.
+5. Start the next version on `main`: set `__version__` to the next development version (for
+   example `0.1.0a3.dev0` after `0.1.0a2`), so builds from `main` can't be mistaken for the
+   release.
 
 A failed run publishes nothing that a rerun can't finish; PyPI rejects re-uploading an existing
 version, so fix forward with the next version number.

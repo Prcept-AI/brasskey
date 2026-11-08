@@ -45,7 +45,7 @@ Next: testing vLLM and SGLang on NVIDIA GPUs, then 0.1.0. Design decisions are r
 Python 3.11 or newer, on macOS or Linux (Windows through WSL2):
 
 ```bash
-brew install prcept-ai/tap/brasskey   # macOS and Linux, prebuilt
+brew install prcept-ai/tap/brasskey   # prebuilt for Apple Silicon and Linux
 uv tool install brasskey       # or: pip install brasskey
 # or, without uv: the installer sets up uv (checksum-verified) and then Brasskey
 curl -LsSf https://raw.githubusercontent.com/Prcept-AI/brasskey/main/scripts/install.sh | sh

@@ -40,8 +40,7 @@ notability, so a tap comes first.
     Homebrew's build environment. A local Linux build failed this way before the change.
     Linux adds `openssl@4` for native-tls; macOS uses the system TLS.
   - The test block runs `brasskey --version` and `brasskey doctor --json`.
-  - `brew style` and `brew audit --strict --new --online` pass; the audit's only finding is the
-    homepage, which returns 404 while this repository is private.
+  - `brew style` and `brew audit --strict --new --online` pass.
 - **Python 3.15:** required by homebrew-core's shared formulas, and now part of Brasskey's CI
   matrix and classifiers. The test suite passes on 3.15.
 - **Bottles** come from the tap's test-bot workflow, adapted from `brew tap-new`:
@@ -57,6 +56,14 @@ notability, so a tap comes first.
 
 - The Linux build was checked locally in Homebrew's arm64 container before publishing: the
   first try failed on aws-lc, as described above. macOS bottles are built by the tap's CI.
+- 0.1.0a2 is the first bottled release. The tap's CI built and tested each bottle in 13 to 17
+  minutes. A clean install in Homebrew's Linux container pours every package from a bottle,
+  compiles nothing, and takes about 40 seconds.
+- Homebrew refuses to load formulae from taps the user hasn't trusted. Installing by the full
+  name (`brew install prcept-ai/tap/brasskey`) records trust for this formula, so later
+  `brew upgrade` works. `brew tap prcept-ai/tap` followed by `brew install brasskey` is refused
+  until the user runs `brew trust` (Homebrew's error says so). The documentation always uses the
+  full name.
 - hf-xet's patch depends on its file layout. If a future version moves those `Cargo.toml` files,
   `inreplace` fails the build loudly instead of silently producing the wrong thing.
 - Intel Macs and systems without a bottle build from source, which needs Rust and takes several

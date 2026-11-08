@@ -107,3 +107,12 @@ an unprivileged user. Its build provenance travels with it:
 ```bash
 docker buildx imagetools inspect ghcr.io/prcept-ai/brasskey:<version> --format '{{json .Provenance}}'
 ```
+
+Homebrew bottles (prebuilt packages) are built and published by the workflows of the tap
+[Prcept-AI/homebrew-tap](https://github.com/Prcept-AI/homebrew-tap). The formula pins each
+bottle's SHA-256, which Homebrew checks on install, and each bottle carries build provenance:
+
+```bash
+gh release download brasskey-<version> -R Prcept-AI/homebrew-tap -p '*.bottle.tar.gz'
+gh attestation verify brasskey-<version>.arm64_sequoia.bottle.tar.gz --repo Prcept-AI/homebrew-tap
+```
