@@ -5,7 +5,8 @@ reports seriously and thank everyone who reports responsibly.
 
 ## Supported versions
 
-Brasskey is pre-alpha (`0.1.0.dev`). Until 1.0, only the latest release receives security fixes.
+Brasskey is pre-alpha (0.1 pre-releases). Until 1.0, only the latest release receives security
+fixes.
 
 ## Reporting a vulnerability
 

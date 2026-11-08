@@ -22,21 +22,38 @@ brasskey deploy     # ship it tuned, verified and secure (coming soon)
 
 ## Status
 
-Pre-alpha, building v0.1 "It runs": `brasskey run`, `brasskey bench` and
-`brasskey doctor --security` on NVIDIA GPUs, Apple Silicon and CPUs, with llama.cpp, MLX, vLLM and
-SGLang. Done so far:
+Pre-alpha. 0.1.0a1 is the first release on PyPI, on the way to v0.1 "It runs": `brasskey run`,
+`brasskey bench` and `brasskey doctor --security` on NVIDIA GPUs, Apple Silicon and CPUs, with
+llama.cpp, MLX, vLLM and SGLang. Done so far:
 
 - `brasskey doctor`: hardware, engines and running servers.
 - Planning with `brasskey run --dry-run`.
 - `brasskey run` with llama.cpp, MLX (Apple Silicon), vLLM or SGLang (NVIDIA on Linux, as a
   process or from the official image pinned by digest). It downloads and verifies the model,
   then serves it on 127.0.0.1 through a Brasskey proxy that enforces API keys. Ctrl-C stops it
-  cleanly.
+  cleanly. llama.cpp and MLX are tested on real hardware; vLLM and SGLang are not yet tested on
+  real GPUs.
 - `brasskey doctor --security`: checks this machine, or a URL, for exposed model servers.
 - `brasskey bench`: repeated GuideLLM runs, 95% intervals on every metric, and PASS / FAIL /
   INCONCLUSIVE when comparing two setups.
 
-Next: release preparation. Design decisions are recorded in [docs/decisions](docs/decisions/).
+Next: testing vLLM and SGLang on NVIDIA GPUs, then 0.1.0. Design decisions are recorded in
+[docs/decisions](docs/decisions/).
+
+## Install
+
+Python 3.11 or newer, on macOS or Linux (Windows through WSL2):
+
+```bash
+uv tool install brasskey       # or: pip install brasskey
+brasskey doctor                # what Brasskey sees on this machine
+brasskey run --dry-run         # the model it would pick for this machine, and why
+```
+
+`brasskey run` starts an engine you have installed, for example `brew install llama.cpp`; on
+Apple Silicon, Brasskey can set up MLX itself if you have uv. `brasskey doctor` shows what's
+installed and how to add the rest. Releases are signed and reproducible; see
+[SECURITY.md](SECURITY.md#verifying-a-release).
 
 ## Try it from source
 
