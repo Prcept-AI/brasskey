@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Continuous integration: lint, types, license policy, tests (macOS arm64 + Linux, Python
+# 3.11-3.14) and a supply-chain audit.
+#
+# Supply-chain rules (CONTRIBUTING.md):
+# - every action is pinned by full commit SHA (tag in the trailing comment; Dependabot bumps both);
+# - uv is pinned to an exact version; Python dependencies come from uv.lock (hashes) with --locked;
+# - least-privilege token: no default permissions, read-only contents per job;
+# - checkout never persists credentials to disk.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.6"
+  # Keep tool output plain and deterministic in logs.
+  NO_COLOR: "1"
+
+jobs:
+  lint:
+    name: Lint, types and licenses
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install (locked)
+        run: uv sync --locked
+      - name: Ruff lint
+        run: uv run --locked ruff check .
+      - name: Ruff format
+        run: uv run --locked ruff format --check .
+      - name: Pyright
+        run: uv run --locked pyright
+      - name: License policy (no GPL/AGPL)
+        run: uv run --locked python scripts/check_licenses.py
+
+  test:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-15 runners are Apple Silicon, so the Apple probe runs on real hardware there.
+        os: [ubuntu-24.04, macos-15]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python }}
+      - name: Install (locked)
+        run: uv sync --locked
+      - name: Pytest (GPU, engine and network tests are opt-in and skipped here)
+        run: uv run --locked pytest
+
+  audit:
+    name: Supply-chain audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Export locked dependencies (with hashes)
+        run: >-
+          uv export --locked --all-groups --no-emit-project
+          --format requirements.txt --output-file "$RUNNER_TEMP/requirements.txt"
+      - name: Known vulnerabilities (pip-audit, no installs)
+        run: >-
+          uv run --locked --only-group audit pip-audit --strict --disable-pip --require-hashes
+          --requirement "$RUNNER_TEMP/requirements.txt"
+      - name: Workflow security (zizmor)
+        run: uv run --locked --only-group audit zizmor --offline .github

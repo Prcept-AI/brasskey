@@ -1,0 +1,65 @@
+Brasskey
+Copyright 2026 Prcept AI LLP
+
+This product includes software developed at Prcept AI LLP
+(https://github.com/Prcept-AI/brasskey), licensed under the Apache License, Version 2.0.
+
+-------------------------------------------------------------------------------
+Inference engines and tools (launched as separate processes; not bundled)
+-------------------------------------------------------------------------------
+
+Brasskey starts the following projects as separate processes or containers. They are not
+included in, linked into or redistributed with Brasskey, and they keep their own licenses:
+
+  llama.cpp          MIT          https://github.com/ggml-org/llama.cpp
+  MLX                MIT          https://github.com/ml-explore/mlx
+  mlx-lm             MIT          https://github.com/ml-explore/mlx-lm
+  vLLM               Apache-2.0   https://github.com/vllm-project/vllm
+  SGLang             Apache-2.0   https://github.com/sgl-project/sglang
+  GuideLLM           Apache-2.0   https://github.com/vllm-project/guidellm
+
+On macOS, mlx-lm is run through uv (MIT OR Apache-2.0, https://github.com/astral-sh/uv) in an
+isolated, pinned environment when it isn't already installed; GuideLLM is run the same way
+(with CPU-only PyTorch, BSD-3-Clause). uv is not bundled either.
+
+Container images for vLLM and SGLang may contain NVIDIA CUDA libraries under NVIDIA's own
+license terms. Users pull those images themselves; Brasskey does not redistribute them.
+
+-------------------------------------------------------------------------------
+Python dependencies (installed separately by pip or uv; not bundled)
+-------------------------------------------------------------------------------
+
+  typer              MIT          https://github.com/fastapi/typer
+                     (includes a vendored copy of Click, BSD-3-Clause)
+  rich               MIT          https://github.com/Textualize/rich
+  pydantic           MIT          https://github.com/pydantic/pydantic
+  psutil             BSD-3-Clause https://github.com/giampaolo/psutil
+  nvidia-ml-py       BSD-3-Clause https://pypi.org/project/nvidia-ml-py/
+                     (NVIDIA's Python bindings for NVML; the NVML library itself ships
+                     with the user's NVIDIA driver and is not redistributed)
+  httpx2             BSD-3-Clause https://github.com/pydantic/httpx2
+                     (with httpcore2, BSD-3-Clause, and truststore, MIT)
+  PyYAML             MIT          https://github.com/yaml/pyyaml
+  platformdirs       MIT          https://github.com/tox-dev/platformdirs
+  huggingface_hub    Apache-2.0   https://github.com/huggingface/huggingface_hub
+                     (with hf-xet, Apache-2.0; tqdm, MPL-2.0 AND MIT, used unmodified)
+  uvicorn            BSD-3-Clause https://github.com/Kludex/uvicorn
+                     (with h11, MIT, and click, BSD-3-Clause)
+  Starlette          BSD-3-Clause https://github.com/Kludex/starlette
+                     (with anyio, MIT)
+  keyring            MIT          https://github.com/jaraco/keyring
+                     (with jaraco.classes, jaraco.context, jaraco.functools and
+                     more-itertools, MIT; on Linux also SecretStorage, BSD-3-Clause,
+                     jeepney, MIT, and cryptography, Apache-2.0 OR BSD-3-Clause, with
+                     cffi, MIT, and pycparser, BSD-3-Clause)
+
+Model files are downloaded from Hugging Face by the user and keep their own licenses; the
+Brasskey catalog stores only metadata (names, revisions, sizes, hashes), never weights.
+
+-------------------------------------------------------------------------------
+Brand assets
+-------------------------------------------------------------------------------
+
+The Brasskey logo outlines in brand/ are derived from Instrument Sans, licensed under the
+SIL Open Font License 1.1 (see brand/licenses/OFL-InstrumentSans.txt). The Brasskey name and
+logo are trademarks of Prcept AI LLP; see TRADEMARKS.md.

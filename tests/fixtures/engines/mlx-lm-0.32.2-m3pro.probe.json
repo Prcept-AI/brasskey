@@ -1,0 +1,1 @@
+{"mlx_lm": "0.32.2", "mlx": "0.32.4", "device": {"device_name": "Apple M3 Pro", "max_recommended_working_set_size": 12884918272, "memory_size": 19327352832, "architecture": "applegpu_g15s", "max_buffer_length": 9663676416, "resource_limit": 499000}}

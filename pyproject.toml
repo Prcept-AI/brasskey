@@ -1,0 +1,169 @@
+[project]
+name = "brasskey"
+dynamic = ["version"]
+description = "The key to every engine: deploy, tune, verify and serve open models on any hardware."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.11"
+authors = [{ name = "Prcept AI LLP" }]
+keywords = ["llm", "inference", "llama.cpp", "mlx", "vllm", "sglang", "benchmark", "openai-compatible"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+# Lower bounds match the versions locked and tested in uv.lock. New dependencies need approval
+# and an Apache-2.0 / MIT / BSD compatible license (see CONTRIBUTING.md).
+dependencies = [
+  "httpx2>=2.16",          # BSD-3-Clause; successor of httpx (pydantic/httpx2), ADR 0004
+  "huggingface-hub>=2.4",  # Apache-2.0; model metadata, cache and downloads
+  "keyring>=25.7",          # MIT; API keys in the OS keychain (Linux: SecretStorage, BSD-3)
+  "nvidia-ml-py>=13.615",  # BSD-3-Clause; NVIDIA's NVML bindings, load the driver library lazily
+  "platformdirs>=4.14",    # MIT; per-OS config, state and log folders
+  "psutil>=7.2",           # BSD-3-Clause
+  "pydantic>=2.14",        # MIT
+  "pyyaml>=6.0.3",         # MIT
+  "rich>=15.0",            # MIT
+  "starlette>=1.10",       # BSD-3-Clause; the local proxy in front of engines, ADR 0009
+  "typer>=0.27",           # MIT (vendors Click, BSD-3-Clause)
+  "uvicorn>=0.54",         # BSD-3-Clause; serves the proxy (with h11, MIT; click, BSD-3)
+]
+
+[project.urls]
+Homepage = "https://github.com/Prcept-AI/brasskey"
+Repository = "https://github.com/Prcept-AI/brasskey"
+Issues = "https://github.com/Prcept-AI/brasskey/issues"
+Security = "https://github.com/Prcept-AI/brasskey/blob/main/SECURITY.md"
+
+[project.scripts]
+brasskey = "brasskey.cli.app:main"
+
+[dependency-groups]
+# Installed by `uv sync` (default group). Tools are pinned exactly; uv.lock adds hashes.
+dev = [
+  "pyright[nodejs]==1.1.414",  # MIT; the nodejs extra bundles Node as a wheel (no runtime download)
+  "pytest==9.2.0",             # MIT
+  "pytest-cov==7.1.0",         # MIT (coverage: Apache-2.0)
+  "ruff==0.17.3",              # MIT
+]
+# CI-only security tooling, kept out of the dev environment: `uv run --only-group audit ...`.
+audit = [
+  "pip-audit==2.10.1",  # Apache-2.0
+  "zizmor==1.31.1",     # MIT
+]
+
+[build-system]
+requires = ["hatchling==1.33.0"]  # MIT
+build-backend = "hatchling.build"
+
+[tool.uv]
+# Supply-chain cooldown (CONTRIBUTING.md): only resolve releases that have been public for at
+# least 7 days, so a compromised release has time to be caught before it reaches us. Needs uv 0.13+.
+exclude-newer = "7 days"
+required-version = ">=0.13.6"
+# Use uv-managed interpreters only (not system or conda ones) for reproducible environments.
+python-preference = "only-managed"
+
+[tool.hatch.version]
+path = "src/brasskey/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brasskey"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/brasskey",
+  "tests",
+  "scripts",
+  "schemas",
+  "README.md",
+  "LICENSE",
+  "NOTICE",
+  "SECURITY.md",
+  "CONTRIBUTING.md",
+  "pyproject.toml",
+]
+
+# ---------------------------------------------------------------------------------------------
+# Ruff: lint and format
+# ---------------------------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "SIM",      # simplify
+  "RUF",      # ruff-specific
+  "S",        # bandit (security)
+  "N",        # naming
+  "C4",       # comprehensions
+  "PT",       # pytest style
+  "T20",      # no print(): output goes through brasskey.output
+  "TID",      # tidy imports (engine import ban below)
+  "PTH",      # pathlib
+  "ASYNC",    # async pitfalls
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S603"]   # assert is how pytest works; tests run our own interpreter
+"scripts/**" = ["T20"]          # developer scripts print reports
+"tests/fakes/fake_engine.py" = ["T20"]
+"tests/fakes/fake_guidellm.py" = ["T20"]  # a stand-in engine process: its stdout is its log
+
+# Architecture rule (CONTRIBUTING.md): inference engines and their stacks are never imported into the
+# Brasskey process. They run as subprocesses or containers behind an engine adapter.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"vllm".msg = "Engines run as subprocesses behind an adapter; never import vllm (see CONTRIBUTING.md)."
+"sglang".msg = "Engines run as subprocesses behind an adapter; never import sglang (see CONTRIBUTING.md)."
+"mlx".msg = "Engines run as subprocesses behind an adapter; never import mlx (see CONTRIBUTING.md)."
+"mlx_lm".msg = "Engines run as subprocesses behind an adapter; never import mlx_lm (see CONTRIBUTING.md)."
+"llama_cpp".msg = "Engines run as subprocesses behind an adapter; never import llama_cpp (see CONTRIBUTING.md)."
+"torch".msg = "Engines pin their own PyTorch/CUDA; never import torch into Brasskey (see CONTRIBUTING.md)."
+"guidellm".msg = "GuideLLM runs as a subprocess wrapped by brasskey.bench; never import it (see CONTRIBUTING.md)."
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------------------------
+# Pyright: strict for shipped code and scripts, standard for tests
+# ---------------------------------------------------------------------------------------------
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+strict = ["src", "scripts"]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+
+# ---------------------------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true
+# Opt-in markers: tests/conftest.py skips them unless selected with -m (e.g. `pytest -m gpu`).
+markers = [
+  "gpu: needs a real NVIDIA GPU (opt-in: -m gpu)",
+  "engine: needs an installed inference engine and downloads a small model (opt-in: -m engine)",
+  "network: needs internet access (opt-in: -m network)",
+]

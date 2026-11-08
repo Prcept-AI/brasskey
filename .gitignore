@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments (uv creates .venv; uv.lock IS committed)
+.venv/
+
+# Tool caches and reports
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local secrets (API keys come from env vars or the OS keyring; never commit them)
+.env
+.env.*

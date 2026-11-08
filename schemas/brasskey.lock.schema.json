@@ -1,0 +1,727 @@
+{
+  "$defs": {
+    "ArtifactFile": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For large (LFS/Xet) files.",
+          "title": "Sha256"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size_bytes"
+      ],
+      "title": "ArtifactFile",
+      "type": "object"
+    },
+    "EngineId": {
+      "enum": [
+        "llamacpp",
+        "mlx",
+        "vllm",
+        "sglang"
+      ],
+      "title": "EngineId",
+      "type": "string"
+    },
+    "LockedBenchmark": {
+      "additionalProperties": false,
+      "description": "A `brasskey bench --lock` result: numbers only, no prompts or responses.",
+      "properties": {
+        "measured_at": {
+          "format": "date-time",
+          "title": "Measured At",
+          "type": "string"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricSummary"
+          },
+          "title": "Metrics",
+          "type": "array"
+        },
+        "model": {
+          "description": "The model name the endpoint served.",
+          "title": "Model",
+          "type": "string"
+        },
+        "tool": {
+          "description": "e.g. \"guidellm 0.8.1\"",
+          "title": "Tool",
+          "type": "string"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "measured_at",
+        "tool",
+        "model",
+        "workload",
+        "metrics"
+      ],
+      "title": "LockedBenchmark",
+      "type": "object"
+    },
+    "LockedEngine": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "default": [],
+          "description": "Launch arguments (informational; {model} = the model file).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Args",
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/$defs/EngineId"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Docker runtime: the pinned image, repository:tag@sha256:...",
+          "title": "Image"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "enum": [
+                "process",
+                "uvx",
+                "docker"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How the engine ran (added in milestone g).",
+          "title": "Runtime"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Version detected when the lock was written.",
+          "title": "Version"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "title": "LockedEngine",
+      "type": "object"
+    },
+    "LockedEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "budget_per_device_bytes": {
+          "title": "Budget Per Device Bytes",
+          "type": "integer"
+        },
+        "devices_used": {
+          "title": "Devices Used",
+          "type": "integer"
+        },
+        "headroom_ratio": {
+          "title": "Headroom Ratio",
+          "type": "number"
+        },
+        "is_estimate": {
+          "const": true,
+          "default": true,
+          "title": "Is Estimate",
+          "type": "boolean"
+        },
+        "required_per_device_bytes": {
+          "title": "Required Per Device Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "required_per_device_bytes",
+        "budget_per_device_bytes",
+        "devices_used",
+        "headroom_ratio"
+      ],
+      "title": "LockedEstimate",
+      "type": "object"
+    },
+    "LockedHardware": {
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint": {
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fingerprint",
+        "summary"
+      ],
+      "title": "LockedHardware",
+      "type": "object"
+    },
+    "LockedMeasurement": {
+      "additionalProperties": false,
+      "properties": {
+        "measured_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured At"
+        },
+        "started": {
+          "description": "True once the engine reported ready with these settings.",
+          "title": "Started",
+          "type": "boolean"
+        },
+        "startup_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Startup Seconds"
+        }
+      },
+      "required": [
+        "started"
+      ],
+      "title": "LockedMeasurement",
+      "type": "object"
+    },
+    "LockedModel": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/ModelArchitecture"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "family": {
+          "title": "Family",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "license": {
+          "title": "License",
+          "type": "string"
+        },
+        "source_repo": {
+          "title": "Source Repo",
+          "type": "string"
+        },
+        "verified": {
+          "title": "Verified",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "display_name",
+        "family",
+        "license",
+        "source_repo",
+        "verified",
+        "architecture"
+      ],
+      "title": "LockedModel",
+      "type": "object"
+    },
+    "LockedServe": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key_env": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Key Env"
+        },
+        "api_key_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the key came from (\"env:NAME\" or \"keyring\"), never the key.",
+          "title": "Api Key Source"
+        },
+        "concurrency": {
+          "title": "Concurrency",
+          "type": "integer"
+        },
+        "context_length": {
+          "title": "Context Length",
+          "type": "integer"
+        },
+        "host": {
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Port"
+        },
+        "tls": {
+          "default": false,
+          "title": "Tls",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "context_length",
+        "concurrency"
+      ],
+      "title": "LockedServe",
+      "type": "object"
+    },
+    "MetricSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "better": {
+          "enum": [
+            "higher",
+            "lower"
+          ],
+          "title": "Better",
+          "type": "string"
+        },
+        "ci_high": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ci High"
+        },
+        "ci_low": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ci Low"
+        },
+        "cv": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cv"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "mean": {
+          "title": "Mean",
+          "type": "number"
+        },
+        "noisy": {
+          "default": false,
+          "title": "Noisy",
+          "type": "boolean"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "unit",
+        "better",
+        "values",
+        "mean"
+      ],
+      "title": "MetricSummary",
+      "type": "object"
+    },
+    "ModelArchitecture": {
+      "additionalProperties": false,
+      "description": "What decides memory use: parameter counts and the shape of the KV cache.",
+      "properties": {
+        "head_dim": {
+          "exclusiveMinimum": 0,
+          "title": "Head Dim",
+          "type": "integer"
+        },
+        "kv_lora_rank": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "MLA latent size (DeepSeek).",
+          "title": "Kv Lora Rank"
+        },
+        "max_context": {
+          "exclusiveMinimum": 0,
+          "title": "Max Context",
+          "type": "integer"
+        },
+        "num_attention_heads": {
+          "exclusiveMinimum": 0,
+          "title": "Num Attention Heads",
+          "type": "integer"
+        },
+        "num_kv_heads": {
+          "exclusiveMinimum": 0,
+          "title": "Num Kv Heads",
+          "type": "integer"
+        },
+        "num_layers": {
+          "exclusiveMinimum": 0,
+          "title": "Num Layers",
+          "type": "integer"
+        },
+        "params_active": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Mixture-of-experts: parameters used per token.",
+          "title": "Params Active"
+        },
+        "params_total": {
+          "exclusiveMinimum": 0,
+          "title": "Params Total",
+          "type": "integer"
+        },
+        "qk_rope_head_dim": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Qk Rope Head Dim"
+        },
+        "sliding_layers": {
+          "default": 0,
+          "description": "Layers with sliding-window attention.",
+          "minimum": 0,
+          "title": "Sliding Layers",
+          "type": "integer"
+        },
+        "sliding_window": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sliding Window"
+        }
+      },
+      "required": [
+        "params_total",
+        "num_layers",
+        "num_attention_heads",
+        "num_kv_heads",
+        "head_dim",
+        "max_context"
+      ],
+      "title": "ModelArchitecture",
+      "type": "object"
+    },
+    "ModelArtifact": {
+      "additionalProperties": false,
+      "description": "One downloadable form of a model: a repo at a pinned revision, in one format.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ArtifactFile"
+          },
+          "minItems": 1,
+          "title": "Files",
+          "type": "array"
+        },
+        "format": {
+          "$ref": "#/$defs/ModelFormat"
+        },
+        "quantization": {
+          "description": "e.g. Q4_K_M, Q8_0, 4bit, bf16, fp8, awq-int4",
+          "title": "Quantization",
+          "type": "string"
+        },
+        "repo_id": {
+          "title": "Repo Id",
+          "type": "string"
+        },
+        "revision": {
+          "description": "Pinned commit SHA.",
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "repo_id",
+        "revision",
+        "quantization",
+        "files"
+      ],
+      "title": "ModelArtifact",
+      "type": "object"
+    },
+    "ModelFormat": {
+      "enum": [
+        "gguf",
+        "mlx",
+        "safetensors"
+      ],
+      "title": "ModelFormat",
+      "type": "string"
+    },
+    "Workload": {
+      "additionalProperties": false,
+      "description": "The traffic each run sends: synthetic prompts of a fixed shape, at fixed concurrency.",
+      "properties": {
+        "concurrency": {
+          "default": 4,
+          "minimum": 1,
+          "title": "Concurrency",
+          "type": "integer"
+        },
+        "duration_s": {
+          "default": 30,
+          "description": "Measured seconds per run.",
+          "minimum": 5,
+          "title": "Duration S",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 128,
+          "minimum": 1,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "prompt_tokens": {
+          "default": 256,
+          "minimum": 1,
+          "title": "Prompt Tokens",
+          "type": "integer"
+        },
+        "repeats": {
+          "default": 3,
+          "description": "Measured runs per endpoint.",
+          "minimum": 1,
+          "title": "Repeats",
+          "type": "integer"
+        },
+        "seed": {
+          "default": 42,
+          "description": "Run i uses seed + i; the warm-up uses seed + 1000.",
+          "title": "Seed",
+          "type": "integer"
+        },
+        "warmup_s": {
+          "default": 10,
+          "description": "One discarded run first (0: none).",
+          "minimum": 0,
+          "title": "Warmup S",
+          "type": "integer"
+        }
+      },
+      "title": "Workload",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "$ref": "#/$defs/ModelArtifact"
+    },
+    "benchmarks": {
+      "default": [],
+      "description": "Appended by `brasskey bench --lock` (added in milestone h).",
+      "items": {
+        "$ref": "#/$defs/LockedBenchmark"
+      },
+      "title": "Benchmarks",
+      "type": "array"
+    },
+    "engine": {
+      "$ref": "#/$defs/LockedEngine"
+    },
+    "estimate": {
+      "$ref": "#/$defs/LockedEstimate"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "generated_by": {
+      "title": "Generated By",
+      "type": "string"
+    },
+    "hardware": {
+      "$ref": "#/$defs/LockedHardware"
+    },
+    "intent_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "sha256 of the brasskey.yaml it came from, if any.",
+      "title": "Intent Sha256"
+    },
+    "lock_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Lock Version",
+      "type": "integer"
+    },
+    "measured": {
+      "$ref": "#/$defs/LockedMeasurement"
+    },
+    "model": {
+      "$ref": "#/$defs/LockedModel"
+    },
+    "serve": {
+      "$ref": "#/$defs/LockedServe"
+    }
+  },
+  "required": [
+    "generated_by",
+    "generated_at",
+    "hardware",
+    "model",
+    "artifact",
+    "engine",
+    "serve",
+    "estimate",
+    "measured"
+  ],
+  "title": "Lock",
+  "type": "object"
+}

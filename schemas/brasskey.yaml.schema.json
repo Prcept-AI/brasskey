@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "EngineId": {
+      "enum": [
+        "llamacpp",
+        "mlx",
+        "vllm",
+        "sglang"
+      ],
+      "title": "EngineId",
+      "type": "string"
+    },
+    "GoalIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "default": 1,
+          "description": "Sequences served at the same time.",
+          "minimum": 1,
+          "title": "Concurrency",
+          "type": "integer"
+        },
+        "context_length": {
+          "default": 8192,
+          "description": "Tokens of context to plan memory for.",
+          "minimum": 256,
+          "title": "Context Length",
+          "type": "integer"
+        }
+      },
+      "title": "GoalIntent",
+      "type": "object"
+    },
+    "ServeIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key_env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z_][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of the environment variable holding the API key (never the key itself).",
+          "title": "Api Key Env"
+        },
+        "host": {
+          "default": "127.0.0.1",
+          "description": "Address to listen on. Anything but loopback requires an API key.",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Port; default 8000 or the next free one.",
+          "title": "Port"
+        },
+        "tls": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TlsIntent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Serve HTTPS with these files."
+        }
+      },
+      "title": "ServeIntent",
+      "type": "object"
+    },
+    "TlsIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "cert_file": {
+          "description": "PEM certificate (chain) file.",
+          "format": "path",
+          "title": "Cert File",
+          "type": "string"
+        },
+        "key_file": {
+          "description": "PEM private key file.",
+          "format": "path",
+          "title": "Key File",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cert_file",
+        "key_file"
+      ],
+      "title": "TlsIntent",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "engine": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EngineId"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Engine to use; omit to let it pick."
+    },
+    "goal": {
+      "$ref": "#/$defs/GoalIntent",
+      "default": {
+        "concurrency": 1,
+        "context_length": 8192
+      }
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Catalog id or hf:org/name[:QUANT]; omit to let Brasskey pick.",
+      "title": "Model"
+    },
+    "serve": {
+      "$ref": "#/$defs/ServeIntent",
+      "default": {
+        "api_key_env": null,
+        "host": "127.0.0.1",
+        "port": null,
+        "tls": null
+      }
+    },
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "title": "Intent",
+  "type": "object"
+}
