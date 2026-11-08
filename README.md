@@ -46,6 +46,9 @@ Python 3.11 or newer, on macOS or Linux (Windows through WSL2):
 
 ```bash
 uv tool install brasskey       # or: pip install brasskey
+# or, without uv: the installer sets up uv (checksum-verified) and then Brasskey
+curl -LsSf https://raw.githubusercontent.com/Prcept-AI/brasskey/main/scripts/install.sh | sh
+
 brasskey doctor                # what Brasskey sees on this machine
 brasskey run --dry-run         # the model it would pick for this machine, and why
 ```
